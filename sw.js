@@ -1,10 +1,10 @@
 // ============================================
-// SERVICE WORKER — Engineering Second Brain
+// SERVICE WORKER — ShopFlow for Teachers
 // Caches external scripts for offline use.
 // Update CACHE_VERSION when deploying changes.
 // ============================================
 
-const CACHE_VERSION = 'esb-v46';
+const CACHE_VERSION = 'esb-v47';
 
 const EXTERNAL_SCRIPTS = [
     'https://unpkg.com/dexie@4.0.8/dist/dexie.js',
@@ -14,6 +14,9 @@ const EXTERNAL_SCRIPTS = [
 const LOCAL_FILES = [
     './index.html',
     './sw.js',
+    './manifest.json',
+    './icon-192.png',
+    './icon-512.png',
     './css/base.css',
     './css/layout.css',
     './css/components.css',
