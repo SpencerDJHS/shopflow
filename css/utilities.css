@@ -1,0 +1,88 @@
+/* Utility Helpers used in HTML */
+.hidden { display: none !important; }
+.text-secondary { color: var(--color-text-secondary); }
+.text-sm { font-size: var(--font-size-body-small); }
+.mt-md { margin-top: var(--space-md); }
+.mb-md { margin-bottom: var(--space-md); }
+
+.border-error {
+    border: 2px solid var(--color-error) !important;
+    background-color: rgba(var(--color-error-rgb), 0.05);
+}
+
+.badge--secondary {
+    display: inline-block;
+    padding: 4px 12px;
+    background: var(--color-border);
+    border-radius: var(--radius-full);
+    font-size: var(--font-size-body-small);
+    font-weight: 600;
+}
+
+/* ========================================== */
+/* UTILITIES                                  */
+/* ========================================== */
+.hidden {
+    display: none;
+}
+
+/* FILLED: Screen reader only content */
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+
+/* FILLED: Expanded spacing utilities */
+.mt-1 { margin-top: var(--space-xs); }
+.mt-2 { margin-top: var(--space-sm); }
+.mt-3 { margin-top: var(--space-md); }
+.mt-4 { margin-top: var(--space-base); }
+.mt-5 { margin-top: var(--space-lg); }
+
+.mb-1 { margin-bottom: var(--space-xs); }
+.mb-2 { margin-bottom: var(--space-sm); }
+.mb-3 { margin-bottom: var(--space-md); }
+.mb-4 { margin-bottom: var(--space-base); }
+.mb-5 { margin-bottom: var(--space-lg); }
+
+.gap-1 { gap: var(--space-xs); }
+.gap-2 { gap: var(--space-sm); }
+.gap-3 { gap: var(--space-md); }
+.gap-4 { gap: var(--space-base); }
+
+/* ========================================== */
+/* KEYFRAMES & ANIMATIONS                     */
+/* ========================================== */
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideUp {
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+@keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}

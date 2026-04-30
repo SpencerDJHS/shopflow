@@ -1,0 +1,97 @@
+/* ========================================== */
+/* RESPONSIVE: MOBILE PORTRAIT                */
+/* ========================================== */
+@media (max-width: 767px) {
+    .app-container {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+            "header"
+            "main";
+    }
+    
+    .sidebar {
+        display: none;
+        position: fixed;
+        top: 60px;
+        left: 0;
+        height: calc(100vh - 60px);
+        width: 250px;
+        z-index: 150;
+        box-shadow: var(--shadow-modal);
+    }
+
+    .sidebar.sidebar--open {
+        display: block;
+    }
+
+    .sidebar-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.4);
+        z-index: 140;
+    }
+
+    .sidebar-overlay--visible {
+        display: block;
+    }
+    
+    .main-content {
+        padding: var(--space-base);
+    }
+    
+    .dashboard__grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ========================================== */
+/* RESPONSIVE: TABLET PORTRAIT                */
+/* ========================================== */
+@media (min-width: 768px) and (max-width: 1023px) {
+    /* FILLED: Tablet portrait adaptations */
+    .app-container {
+        grid-template-columns: 80px 1fr; /* Collapsed sidebar */
+    }
+    
+    .dashboard__grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .sidebar__nav-item a span {
+        display: none; /* Hide text, show only icons */
+    }
+}
+
+/* ========================================== */
+/* RESPONSIVE: TABLET LANDSCAPE (PRIMARY)     */
+/* ========================================== */
+@media (min-width: 1024px) and (max-width: 1365px) {
+    /* FILLED: Tablet landscape adaptations */
+    .app-container {
+        grid-template-columns: 250px 1fr;
+    }
+    
+    .dashboard__grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+    
+    .main-content {
+        padding: var(--space-xl);
+    }
+}
+
+/* ========================================== */
+/* RESPONSIVE: DESKTOP                        */
+/* ========================================== */
+@media (min-width: 1366px) {
+    /* FILLED: Desktop adaptations */
+    .page {
+        max-width: 1600px;
+        margin: 0 auto;
+    }
+    
+    .dashboard__grid {
+        grid-template-columns: repeat(4, 1fr); /* 4 columns for ultrawide */
+    }
+}

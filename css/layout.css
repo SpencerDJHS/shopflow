@@ -1,0 +1,178 @@
+/* ========================================== */
+/* LAYOUT: MAIN APP STRUCTURE                 */
+/* ========================================== */
+.app-container {
+    display: grid;
+    grid-template-columns: 250px 1fr;
+    grid-template-rows: 60px 1fr;
+    grid-template-areas:
+        "header header"
+        "sidebar main";
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* ========================================== */
+/* COMPONENT: HEADER                          */
+/* ========================================== */
+.header {
+    grid-area: header;
+    background-color: var(--color-background);
+    border-bottom: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    padding: 0 var(--space-lg);
+    gap: var(--space-lg);
+    box-shadow: var(--shadow-card);
+}
+
+.header__logo h1 {
+    font-size: var(--font-size-h3);
+    color: var(--color-primary);
+    font-weight: 600;
+}
+
+.header__period-selector {
+    margin-left: auto;
+}
+
+.header__search {
+    flex: 1;
+    max-width: 400px;
+}
+
+.header__search input {
+    width: 100%;
+    padding: var(--space-sm) var(--space-base);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-body);
+}
+
+.header__search input:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+
+.search-result-item:hover {
+    background-color: var(--color-background-tertiary);
+}
+
+/* FILLED: Profile/settings button styling */
+.header__profile {
+    width: var(--touch-target-min);
+    height: var(--touch-target-min);
+    border-radius: var(--radius-circle);
+    background-color: var(--color-background-secondary);
+    border: 1px solid var(--color-border);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color var(--transition-fast);
+}
+
+.header__profile:hover {
+    background-color: var(--color-background-tertiary);
+}
+
+/* ========================================== */
+/* COMPONENT: SIDEBAR NAVIGATION              */
+/* ========================================== */
+.sidebar {
+    grid-area: sidebar;
+    background-color: var(--color-background);
+    border-right: 1px solid var(--color-border);
+    padding: var(--space-lg) 0;
+    overflow-y: auto;
+}
+
+.sidebar__nav ul {
+    list-style: none;
+}
+
+.sidebar__nav-item {
+    margin-bottom: var(--space-xs);
+}
+
+.sidebar__nav-item a {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    padding: var(--space-md) var(--space-lg);
+    color: var(--color-text-secondary);
+    text-decoration: none;
+    transition: all var(--transition-fast);
+}
+
+.sidebar__nav-item a:hover {
+    background-color: var(--color-background-tertiary);
+    color: var(--color-text-primary);
+}
+
+.sidebar__nav-item--active a {
+    background-color: var(--color-primary-light);
+    color: var(--color-primary);
+    font-weight: 600;
+}
+
+.sidebar__toggle {
+    display: none;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: var(--space-sm);
+    color: var(--color-text-secondary);
+}
+
+@media (max-width: 767px) {
+    .sidebar__toggle {
+        display: block;
+        position: fixed;
+        bottom: var(--space-lg);
+        right: var(--space-lg);
+        z-index: 200;
+        background: var(--color-primary);
+        color: white;
+        border-radius: var(--radius-circle);
+        width: 48px;
+        height: 48px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: var(--shadow-card-hover);
+    }
+}
+
+/* ========================================== */
+/* COMPONENT: MAIN CONTENT AREA               */
+/* ========================================== */
+.main-content {
+    grid-area: main;
+    padding: var(--space-xl);
+    overflow-y: auto;
+}
+
+.page {
+    max-width: 1400px;
+}
+
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-xl);
+}
+
+.page-title {
+    font-size: var(--font-size-h1);
+    font-weight: 700;
+    color: var(--color-text-primary);
+}
+
+.page-subtitle {
+    font-size: var(--font-size-body);
+    color: var(--color-text-secondary);
+    margin-top: var(--space-xs);
+}

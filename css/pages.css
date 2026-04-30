@@ -1,0 +1,736 @@
+/* ========================================== */
+/* PAGE: STUDENTS LIST                        */
+/* ========================================== */
+/* .students-page { No special styling needed - uses default page styles } */
+
+.students-filters {
+    margin-bottom: var(--space-lg);
+    display: flex;
+    gap: var(--space-sm);
+    flex-wrap: wrap;
+}
+
+.students-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(500px, 1fr));
+    gap: var(--space-sm);
+}
+
+/* --- Student Card Specific --- */
+.student-card {
+    cursor: pointer;
+}
+
+.student-card__header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-base);
+    margin-bottom: 0;
+}
+
+.student-card__avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-circle);
+    background-color: var(--color-primary-light);
+    color: var(--color-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: var(--font-size-h3);
+    flex-shrink: 0;
+}
+
+.student-card__info h4 {
+    font-size: var(--font-size-body-large);
+    font-weight: 600;
+    margin-bottom: var(--space-xs);
+}
+
+.student-card__info p {
+    font-size: var(--font-size-body-small);
+    color: var(--color-text-secondary);
+}
+
+/* ========================================== */
+/* PAGE: STUDENT DETAIL                       */
+/* ========================================== */
+/* FILLED: Student detail page layout */
+.student-detail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xl);
+}
+
+.student-detail__header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-lg);
+    padding-bottom: var(--space-lg);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.student-detail__sections {
+    display: flex;
+    gap: var(--space-base);
+    border-bottom: 1px solid var(--color-border);
+    padding-bottom: var(--space-sm);
+    overflow-x: auto;
+}
+
+.student-detail__attendance {
+    background-color: var(--color-background);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    box-shadow: var(--shadow-card);
+}
+
+.student-detail__skills {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: var(--space-base);
+}
+
+.student-detail__activities {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+}
+
+.student-detail__checkpoints {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+}
+
+.student-detail__notes {
+    background-color: var(--color-background-tertiary);
+    padding: var(--space-lg);
+    border-radius: var(--radius-md);
+    border: 1px dashed var(--color-border);
+}
+
+/* ========================================== */
+/* PAGE: ATTENDANCE ENTRY                     */
+/* ========================================== */
+.attendance__period-select {
+    background-color: var(--color-background);
+    padding: var(--space-lg);
+    border-radius: var(--radius-lg);
+    margin-bottom: var(--space-lg);
+    border: 1px solid var(--color-border);
+}
+
+.attendance__date {
+    margin-top: var(--space-base);
+    font-size: var(--font-size-body-large);
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+.attendance__student-list {
+    background-color: var(--color-background);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-border);
+    overflow: hidden;
+}
+
+.attendance__student-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-base) var(--space-lg);
+    border-bottom: 1px solid var(--color-border);
+    min-height: var(--touch-target-min);
+    cursor: pointer;
+    transition: background-color var(--transition-fast);
+    user-select: none;
+}
+
+.attendance__student-item:last-child {
+    border-bottom: none;
+}
+
+.attendance__student-item:hover {
+    background-color: var(--color-background-tertiary);
+}
+
+.attendance__student-item--present {
+    background-color: rgba(22, 163, 74, 0.1);
+    border-left: 4px solid var(--color-success);
+}
+
+.attendance__student-item--late {
+    background-color: rgba(234, 88, 12, 0.1);
+    border-left: 4px solid var(--color-warning);
+}
+
+.attendance__student-item--absent {
+    background-color: rgba(220, 38, 38, 0.1);
+    border-left: 4px solid var(--color-error);
+}
+
+.attendance__student-name {
+    font-size: var(--font-size-body-large);
+    font-weight: 500;
+}
+
+.attendance__student-status {
+    display: flex;
+    gap: var(--space-sm);
+}
+
+.attendance__remove-btn {
+    background: var(--color-background);
+    color: var(--color-error);
+    border: 1px solid var(--color-error);
+    border-radius: var(--radius-sm);
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 20px;
+    font-weight: bold;
+    transition: all var(--transition-fast);
+    padding: 0;
+    line-height: 1;
+    z-index: 2; /* Ensures it stays clickable over row backgrounds */
+}
+
+.attendance__remove-btn:hover {
+    background-color: var(--color-error);
+    color: white;
+}
+
+/* Adjust the name container to prevent text overlap with the button */
+.attendance__name-container {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+}
+
+/* ========================================== */
+/* PAGE: TEAMS                                */
+/* ========================================== */
+.teams-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: var(--space-base);
+}
+
+/* FILLED: Team card styling */
+.team-card {
+    background-color: var(--color-background);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    box-shadow: var(--shadow-card);
+    transition: box-shadow var(--transition-fast);
+    cursor: pointer;
+}
+
+.team-card:hover {
+    box-shadow: var(--shadow-card-hover);
+}
+
+.team-card__members {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+    margin-top: var(--space-md);
+}
+
+.team-card__activity {
+    margin-top: var(--space-lg);
+    padding-top: var(--space-sm);
+    border-top: 1px solid var(--color-border);
+    font-size: var(--font-size-body-small);
+    color: var(--color-text-secondary);
+}
+
+/* ========================================== */
+/* PAGE: TEAM DETAIL                          */
+/* ========================================== */
+/* FILLED: Team detail page layout */
+.team-detail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xl);
+}
+
+.team-detail__members {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: var(--space-base);
+}
+
+.team-detail__progress {
+    background-color: var(--color-background);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    border: 1px solid var(--color-border);
+}
+
+/* ========================================== */
+/* PAGE: ACTIVITIES LIST                      */
+/* ========================================== */
+/* .activities-page { Uses default page styles } */
+
+.activities-filters {
+    display: flex;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-lg);
+    flex-wrap: wrap;
+}
+
+.activity-filter-btn {
+    min-width: 100px;
+}
+
+.activity-filter-btn.active {
+    background-color: var(--color-primary);
+    color: white;
+    border-color: var(--color-primary);
+}
+
+.activities-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+    gap: var(--space-base);
+}
+
+/* ========================================== */
+/* PAGE: ACTIVITY DETAIL                      */
+/* ========================================== */
+.activity-detail-page {
+    max-width: 1200px;
+}
+
+.activity-detail__alerts {
+    display: flex;
+    gap: var(--space-base);
+    flex-wrap: wrap;
+}
+
+.activity-detail__alert {
+    flex: 1;
+    min-width: 200px;
+    padding: var(--space-base);
+    border-radius: var(--radius-md);
+    border-left: 4px solid currentColor;
+}
+
+.activity-detail__alert--warning {
+    background-color: rgba(234, 88, 12, 0.1);
+    border-color: var(--color-warning);
+}
+
+.activity-detail__alert--error {
+    background-color: rgba(220, 38, 38, 0.1);
+    border-color: var(--color-error);
+}
+
+.activity-detail__alert--success {
+    background-color: rgba(22, 163, 74, 0.1);
+    border-color: var(--color-success);
+}
+
+.checkpoint-chart {
+    min-width: 600px;
+}
+
+.checkpoint-chart table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.checkpoint-chart th,
+.checkpoint-chart td {
+    padding: var(--space-sm);
+    border: 1px solid var(--color-border);
+    text-align: center;
+}
+
+.checkpoint-chart th {
+    background-color: var(--color-background-tertiary);
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+}
+
+.checkpoint-chart td:first-child {
+    text-align: left;
+    font-weight: 500;
+}
+
+.checkpoint-chart .complete {
+    color: var(--color-success);
+}
+
+.checkpoint-chart .incomplete {
+    color: var(--color-error);
+}
+
+/* Full Edit Page — Collapsible Sections  */
+.edit-section {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-base);
+    background: var(--color-surface);
+}
+.edit-section__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-base) var(--space-md);
+    cursor: pointer;
+    user-select: none;
+}
+.edit-section__header h3 {
+    margin: 0;
+    font-size: var(--font-size-body);
+    font-weight: 600;
+}
+.edit-section__summary {
+    margin: 2px 0 0 0;
+    font-size: var(--font-size-body-small);
+    color: var(--color-text-secondary);
+}
+.edit-section__chevron {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    transition: transform 0.2s;
+}
+.edit-section--open .edit-section__chevron {
+    transform: rotate(90deg);
+}
+.edit-section__body {
+    padding: 0 var(--space-md) var(--space-md);
+}
+#edit-section-basic .edit-section__header {
+    cursor: default;
+}
+
+/* Material item rows */
+.fe-material-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: var(--space-xs) 0;
+    border-bottom: 1px solid var(--color-border-light, #eee);
+}
+.fe-material-row:last-child {
+    border-bottom: none;
+}
+.fe-material-icon {
+    font-size: 16px;
+    min-width: 20px;
+    text-align: center;
+}
+.fe-material-label {
+    flex: 1;
+    font-size: var(--font-size-body-small);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.fe-material-remove {
+    cursor: pointer;
+    color: var(--color-text-secondary);
+    padding: 2px 6px;
+    border: none;
+    background: none;
+    font-size: 16px;
+}
+.fe-material-reorder {
+    background: none;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 12px;
+    cursor: pointer;
+    color: var(--color-text-secondary);
+    min-width: 32px;
+    min-height: 32px;
+}
+.fe-material-reorder:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+.fe-material-remove:hover {
+    color: var(--color-error, #c5221f);
+}
+
+/* ========================================== */
+/* PAGE: CHECKPOINT MARKING                   */
+/* ========================================== */
+.checkpoint-page {
+    max-width: 900px;
+}
+
+.checkpoint-step {
+    background-color: var(--color-background);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    margin-bottom: var(--space-lg);
+}
+
+.checkpoint-step h3 {
+    font-size: var(--font-size-h3);
+    font-weight: 600;
+    margin-bottom: var(--space-base);
+}
+
+.checkpoint-year-btn,
+.checkpoint-team-btn,
+.checkpoint-activity-btn,
+.checkpoint-checkpoint-btn {
+    min-width: 150px;
+}
+
+.checkpoint-year-btn.active,
+.checkpoint-team-btn.active,
+.checkpoint-activity-btn.active,
+.checkpoint-checkpoint-btn.active {
+    background-color: var(--color-primary);
+    color: white;
+    border-color: var(--color-primary);
+}
+
+/* FILLED: Questions display styling */
+.checkpoint__questions {
+    background-color: var(--color-background-tertiary);
+    padding: var(--space-lg);
+    border-radius: var(--radius-md);
+    border-left: 4px solid var(--color-primary);
+    margin-bottom: var(--space-lg);
+}
+
+.checkpoint__questions p {
+    margin-bottom: var(--space-xs);
+}
+
+/* FILLED: Students list container */
+.checkpoint__students {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+}
+
+.checkpoint__student-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-base);
+    padding: var(--space-base);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-sm);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.checkpoint__student-item:hover {
+    background-color: var(--color-background-tertiary);
+}
+
+.checkpoint__student-item input[type="checkbox"] {
+    width: 24px;
+    height: 24px;
+    cursor: pointer;
+}
+
+.checkpoint__student-item--complete {
+    background-color: rgba(22, 163, 74, 0.1);
+    border-color: var(--color-success);
+}
+
+.checkpoint__mark-all {
+    margin: var(--space-lg) 0;
+}
+
+/* ========================================== */
+/* PAGE: INVENTORY                            */
+/* ========================================== */
+/* FILLED: Inventory styles */
+.inventory-page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+}
+
+.inventory-filters {
+    display: flex;
+    gap: var(--space-sm);
+    flex-wrap: wrap;
+}
+
+.inventory-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: var(--space-base);
+}
+
+/* ========================================== */
+/* PAGE: INVENTORY DETAIL                     */
+/* ========================================== */
+/* FILLED: Inventory detail styles */
+.inventory-detail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xl);
+}
+
+.inventory-detail__info {
+    background-color: var(--color-background);
+    padding: var(--space-lg);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.inventory-detail__checkouts {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+}
+
+.inventory-detail__history {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-body-small);
+}
+
+/* ========================================== */
+/* PAGE: CALENDAR                             */
+/* ========================================== */
+/* FILLED: Calendar styles */
+.calendar-page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+    height: 100%;
+}
+
+.calendar__view-selector {
+    display: flex;
+    gap: var(--space-xs);
+    background-color: var(--color-background-tertiary);
+    padding: var(--space-xs);
+    border-radius: var(--radius-md);
+    align-self: flex-start;
+}
+
+.calendar__grid {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 1px;
+    background-color: var(--color-border);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+.calendar__event {
+    background-color: var(--color-primary-light);
+    color: var(--color-primary-hover);
+    padding: var(--space-xs) var(--space-sm);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-caption);
+    margin-top: var(--space-xs);
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ========================================== */
+/* PAGE: TASKS                                */
+/* ========================================== */
+/* FILLED: Tasks styles */
+.tasks-page {
+    max-width: 800px;
+}
+
+.tasks-filters {
+    display: flex;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-lg);
+}
+
+.tasks-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+}
+
+/* ========================================== */
+/* PAGE: SETTINGS                             */
+/* ========================================== */
+
+.settings-page {
+    max-width: 900px; /* Bumped slightly for the grid layouts */
+    margin: 0 auto;
+}
+
+/* Main Tab Navigation */
+.tabs {
+    display: flex;
+    gap: var(--space-xs);
+    margin-bottom: var(--space-lg);
+    border-bottom: 1px solid var(--color-border);
+    overflow-x: auto; /* Scrollable tabs on mobile */
+    scrollbar-width: none; /* Hide scrollbar Firefox */
+}
+
+.tabs::-webkit-scrollbar { display: none; } /* Hide scrollbar Chrome/Safari */
+
+.tab-btn {
+    padding: var(--space-sm) var(--space-lg);
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    border-bottom: 3px solid transparent;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.tab-btn:hover:not(.active) {
+    color: var(--color-text-primary);
+    background-color: var(--color-bg-hover);
+}
+
+.tab-btn.active {
+    color: var(--color-primary);
+    border-bottom-color: var(--color-primary);
+}
+
+/* Content Area Transitions */
+.settings-content {
+    animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Sub-tabs (The Bell Schedule Selectors) */
+.schedule-tab {
+    text-align: left !important;
+    padding: var(--space-sm) var(--space-base) !important;
+    transition: all 0.2s;
+}
+
+.schedule-tab.active {
+    background-color: var(--color-primary) !important;
+    color: white !important;
+    border-color: var(--color-primary) !important;
+}
