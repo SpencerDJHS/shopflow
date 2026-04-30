@@ -1,0 +1,308 @@
+// ============================================
+// UTILITY FUNCTIONS
+// ============================================
+
+async function getActiveSchoolYear() {
+    // First check if there's a manually selected active year
+    const activeYearSetting = await db.settings.get('active-school-year');
+    if (activeYearSetting?.value) return activeYearSetting.value;
+
+    // Otherwise derive from school-year start date
+    const schoolYearSetting = await db.settings.get('school-year');
+    if (schoolYearSetting?.value?.start) {
+        const startYear = new Date(schoolYearSetting.value.start).getFullYear();
+        return `${startYear}-${startYear + 1}`;
+    }
+
+    // Fallback: derive from current date (school year starts in August)
+    const now = new Date();
+    const year = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1;
+    return `${year}-${year + 1}`;
+}
+
+const utils = {
+    // Timestamp helper
+    timestamp: function() {
+        return new Date().toISOString();
+    }
+};
+
+// ============================================
+// SECURITY UTILITIES
+// ============================================
+
+/**
+ * Escapes user-supplied text before inserting into innerHTML.
+ * Prevents XSS attacks from malicious student names, notes, etc.
+ */
+function escapeHtml(text) {
+    if (text == null) return '';
+    const div = document.createElement('div');
+    div.appendChild(document.createTextNode(String(text)));
+    return div.innerHTML;
+}
+function calculateFinalGrade(activity, studentId, submission, checkpoints, completions) {
+        const cpWeight = (activity.checkpointGradeWeight || 0) / 100;
+        const assignmentWeight = 1 - cpWeight;
+
+        // Checkpoint score (0–1)
+        let cpScore = 0;
+        if (checkpoints.length > 0 && cpWeight > 0) {
+            const studentCompletions = completions.filter(function(c) {
+                return String(c.studentId) === String(studentId) && c.completed;
+            });
+            if (activity.checkpointGradeMode === 'timeliness') {
+                let cpPoints = 0;
+                checkpoints.forEach(function(cp) {
+                    const completion = studentCompletions.find(function(c) { return c.checkpointId === cp.id; });
+                    if (completion) {
+                        const onTime = !cp.suggestedDate || completion.completedAt <= cp.suggestedDate;
+                        cpPoints += onTime ? 1 : 0.5;
+                    }
+                });
+                cpScore = cpPoints / checkpoints.length;
+            } else {
+                cpScore = studentCompletions.filter(function(c) {
+                    return checkpoints.some(function(cp) { return cp.id === c.checkpointId; });
+                }).length / checkpoints.length;
+            }
+        }
+
+        // Assignment score (0–1)
+        let assignmentScore = 0;
+        if (submission) {
+            const scoringType = activity.scoringType || 'complete-incomplete';
+            if (scoringType === 'rubric' && submission.rubricScores && activity.rubric) {
+                const levels = activity.rubric.levels;
+                const criteria = activity.rubric.criteria;
+                let total = 0;
+                let count = 0;
+                criteria.forEach(function(c) {
+                    const idx = levels.indexOf(submission.rubricScores[c.name]);
+                    if (idx >= 0) {
+                        total += (levels.length - 1 - idx) / (levels.length - 1);
+                        count++;
+                    }
+                });
+                assignmentScore = count > 0 ? total / count : 0;
+            } else if (scoringType === 'points' && submission.score != null) {
+                const max = activity.defaultPoints || 100;
+                assignmentScore = submission.score / max;
+            } else if (scoringType === 'complete-incomplete') {
+                assignmentScore = (submission.status === 'graded' || submission.status === 'submitted') ? 1 : 0;
+            }
+        }
+
+        return {
+            finalScore: (cpScore * cpWeight) + (assignmentScore * assignmentWeight),
+            cpScore: cpScore,
+            assignmentScore: assignmentScore,
+            cpWeight: cpWeight,
+            assignmentWeight: assignmentWeight
+        };
+    }
+
+function getTodayString() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function downloadCSV(csvContent, filename) {
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${filename}_${getTodayString()}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+}
+
+function csvEscape(value) {
+    if (value == null) return '';
+    const str = String(value);
+    if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+        return '"' + str.replace(/"/g, '""') + '"';
+    }
+    return str;
+}
+
+function excludeDeleted(records) {
+    return records.filter(r => !r.deletedAt);
+}
+
+// ============================================
+// STANDALONE FUNCTIONS
+// ============================================
+
+async function logAction(action, entityType, entityId, description) {
+    try {
+        await db.activityLog.add({
+            action: action,
+            entityType: entityType,
+            entityId: entityId,
+            description: description,
+            timestamp: new Date().toISOString()
+        });
+
+        // Trim to 100 entries — delete oldest if over limit
+        const count = await db.activityLog.count();
+        if (count > 100) {
+            const excess = await db.activityLog
+                .orderBy('id')
+                .limit(count - 100)
+                .primaryKeys();
+            await db.activityLog.bulkDelete(excess);
+        }
+    } catch (err) {
+        // Activity logging should never break the app — fail silently
+        console.warn('Activity log write failed:', err);
+    }
+}
+
+function formatTimeAgo(date) {
+    const now = new Date();
+    const seconds = Math.floor((now - date) / 1000);
+
+    if (seconds < 60) return 'Just now';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days === 1) return 'Yesterday';
+    if (days < 7) return `${days}d ago`;
+
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function displayName(student, format) {
+    if (!student) return 'Unknown';
+    format = format || 'first-last';
+    const first = (student.firstName || '').trim();
+    const last = (student.lastName || '').trim();
+    // Fallback to legacy name field if migration hasn't run
+    if (!first && !last) return student.name || 'Unknown';
+    switch (format) {
+        case 'last-first':
+            return last ? (last + ', ' + first).trim() : first;
+        case 'first-last':
+        default:
+            return (first + ' ' + last).trim() || 'Unknown';
+    }
+}
+
+async function getNextAnonId() {
+    const setting = await db.settings.get('anon-id-counter');
+    let counter = (setting && setting.value) ? setting.value : 1;
+    const padded = String(counter).padStart(4, '0');
+    const anonId = 'STU-' + padded;
+    await db.settings.put({ key: 'anon-id-counter', value: counter + 1 });
+    return anonId;
+}
+
+function sortByStudentName(a, b) {
+    const lastCmp = (a.lastName || '').localeCompare(b.lastName || '');
+    return lastCmp !== 0 ? lastCmp : (a.firstName || '').localeCompare(b.firstName || '');
+}
+
+function gradingSortStudents(students, submissionMap) {
+    const statusRank = { 'not-started': 0, 'in-progress': 1, 'submitted': 2, 'graded': 3 };
+    return students.slice().sort((a, b) => {
+        const aStatus = submissionMap.get(a.id)?.status || 'not-started';
+        const bStatus = submissionMap.get(b.id)?.status || 'not-started';
+        const statusCmp = (statusRank[aStatus] || 0) - (statusRank[bStatus] || 0);
+        if (statusCmp !== 0) return statusCmp;
+        return sortByStudentName(a, b);
+    });
+}
+
+function getSchoolDayPosition(todayStr, activityStartDate, activityEndDate, nonInstructionalDays) {
+    // Only count no-school types (delays and early dismissals are still school days)
+    const noSchoolTypes = ['holiday', 'break', 'no-school'];
+
+    const isNoSchoolDay = (dateStr) => nonInstructionalDays.some(ni => {
+        if (!noSchoolTypes.includes(ni.type)) return false;
+        if (ni.end) return dateStr >= ni.start && dateStr <= ni.end;
+        return ni.start === dateStr;
+    });
+
+    // Parse dates as local (avoiding timezone issues)
+    const startParts = activityStartDate.split('-');
+    const endParts = activityEndDate.split('-');
+    const start = new Date(startParts[0], startParts[1] - 1, startParts[2]);
+    const end = new Date(endParts[0], endParts[1] - 1, endParts[2]);
+
+    // Check if today is within the activity's date range
+    if (todayStr < activityStartDate || todayStr > activityEndDate) return null;
+
+    let totalDays = 0;
+    let currentDay = 0;
+    const cursor = new Date(start);
+
+    while (cursor <= end) {
+        const cursorStr = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
+        const dayOfWeek = cursor.getDay();
+        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+        if (!isWeekend && !isNoSchoolDay(cursorStr)) {
+            totalDays++;
+            if (cursorStr <= todayStr) {
+                currentDay = totalDays;
+            }
+        }
+
+        cursor.setDate(cursor.getDate() + 1);
+    }
+
+    if (currentDay === 0) return null; // today itself is a non-school day somehow
+    return { currentDay, totalDays };
+}
+
+async function getActiveNonInstructionalDays() {
+    const niData = await db.settings.get('non-instructional-days');
+    const allDays = niData?.value || [];
+    const activeYear = await getActiveSchoolYear();
+    return allDays.filter(d => !d.schoolYear || d.schoolYear === activeYear);
+}
+
+async function getSkillCategories() {
+    const setting = await db.settings.get('skill-categories');
+    return setting?.value || ['Safety', 'Fabrication', 'Design', 'Measurement', 'Digital', 'Other'];
+}
+
+async function getCalculatedSkillLevels(studentId) {
+    // Returns a Map of skillId -> calculated level based on assignment rubric skill scores
+    // Weighted toward recent: each score gets weight = index + 1 (most recent = highest weight)
+    const levelValues = { 'Novice': 1, 'Developing': 2, 'Proficient': 3, 'Advanced': 4 };
+    const valueLabels = { 1: 'Novice', 2: 'Developing', 3: 'Proficient', 4: 'Advanced' };
+
+    const submissions = (await db.submissions.toArray())
+        .filter(s => s.studentId === studentId && s.skillScores && Object.keys(s.skillScores).length > 0)
+        .sort((a, b) => (a.updatedAt || a.submittedAt || '').localeCompare(b.updatedAt || b.submittedAt || ''));
+
+    const skillScoresMap = new Map(); // skillId -> [{value, weight}]
+
+    submissions.forEach((sub, idx) => {
+        const weight = idx + 1; // later submissions get higher weight
+        for (const [skillId, level] of Object.entries(sub.skillScores)) {
+            if (!levelValues[level]) continue;
+            if (!skillScoresMap.has(skillId)) skillScoresMap.set(skillId, []);
+            skillScoresMap.get(skillId).push({ value: levelValues[level], weight });
+        }
+    });
+
+    const result = new Map();
+    for (const [skillId, scores] of skillScoresMap) {
+        const totalWeight = scores.reduce((sum, s) => sum + s.weight, 0);
+        const weightedSum = scores.reduce((sum, s) => sum + s.value * s.weight, 0);
+        const avg = weightedSum / totalWeight;
+        // Round to nearest level
+        const rounded = Math.round(avg);
+        const clamped = Math.max(1, Math.min(4, rounded));
+        result.set(skillId, { level: valueLabels[clamped], average: avg, count: scores.length });
+    }
+    return result;
+}
