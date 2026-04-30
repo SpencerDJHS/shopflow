@@ -19,7 +19,7 @@ ShopFlow is a free, open-source progressive web app (PWA) that helps you manage 
 
 ## Quick Start
 
-1. Open the app: [[https://spencerdjhs.github.io/shopflow/](url)]
+1. Open the app: [[ShopFlow URL](https://spencerdjhs.github.io/shopflow/)]
 2. Install it as a PWA (Add to Home Screen)
 3. Follow the Setup Guide to connect your Google account
 
