@@ -148,7 +148,7 @@ const globalSearch = {
             if (inventoryItems.length > 0) {
                 html += `<div style="padding: var(--space-sm) var(--space-base); font-size: var(--font-size-body-small); font-weight: 600; color: var(--color-text-secondary); background: var(--color-background-secondary);">Inventory (${inventoryItems.length})</div>`;
                 inventoryItems.forEach(i => {
-                    html += `<div class="search-result-item" onclick="globalSearch.close(); state.selectedInventoryItem = ${i.id}; router.navigate('inventory-detail'); pages.inventoryDetail.render(${i.id});" style="padding: var(--space-sm) var(--space-base); cursor: pointer; border-bottom: 1px solid var(--color-border);">
+                    html += `<div class="search-result-item" onclick="globalSearch.close(); router.navigate('inventory');" style="padding: var(--space-sm) var(--space-base); cursor: pointer; border-bottom: 1px solid var(--color-border);">
                         <span>${escapeHtml(i.name)}</span>
                     </div>`;
                 });
@@ -381,18 +381,13 @@ const gestures = {
 async function initializePeriodYearMap() {
     
     // Initialize period-year mapping if it doesn't exist
+    // Teacher configures this in Settings → Periods
     const existingMapping = await db.settings.get('period-year-map');
     if (!existingMapping) {
         await db.settings.put({ 
             key: 'period-year-map', 
-            value: {
-                '1': '2',
-                '3': '1', 
-                '5': '1',
-                '6': '4',
-                '7': '1'
-            }
+            value: {}
         });
-        console.log('✅ Period-year mapping initialized');
+        console.log('✅ Period-year mapping initialized (empty — configure in Settings → Periods)');
     }
 }
