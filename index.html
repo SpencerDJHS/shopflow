@@ -360,100 +360,81 @@
                 <!-- Dashboard Grid -->
                 <div class="dashboard__grid">
                     
-                    <!-- Active Assignments Progress (Dashboard Widget) -->
-                    <section class="dashboard__section" style="grid-column: 1 / -1; max-height: none;">
+                    <!-- ROW 1: Active Assignments (full width) -->
+                    <section class="dashboard__section dashboard__row-full">
                         <h3 class="dashboard__section-title">📊 Active Assignments</h3>
                         <div id="dashboard-active-assignments">
                             <p style="color: var(--color-text-tertiary); font-style: italic;">Loading...</p>
                         </div>
                     </section>
 
-                    <!-- Absent Today -->
-                    <section class="dashboard__section">
-                      <h3 class="dashboard__section-title">Absent Today</h3>
-                      <div class="dashboard__section-content">
-                          <div id="dashboard-absent-list" class="dashboard__absent-list">
-                              <p style="color: var(--color-text-tertiary); font-style: italic; padding: var(--space-md);">No absences recorded yet.</p>
-                          </div>
-                      </div>
-                  </section>
-                    
-                    <!-- Today's Events -->
-                    <section class="dashboard__section">
-                        <h3 class="dashboard__section-title">Today's Events</h3>
-                        <div class="dashboard__section-content" id="dashboard-events-list">
-                            <p style="color: var(--color-text-tertiary); font-style: italic; padding: var(--space-md);">No events scheduled for today.</p>
+                    <!-- ROW 2: Attendance Band (full width, compact) -->
+                    <section class="dashboard__section dashboard__row-full">
+                        <div class="attendance-band">
+                            <div class="attendance-band__stat">
+                                <span class="attendance-band__number attendance-band__number--present" id="stats-present">0%</span>
+                                <span class="attendance-band__label">present</span>
+                            </div>
+                            <div class="attendance-band__divider"></div>
+                            <div class="attendance-band__stat">
+                                <span class="attendance-band__number attendance-band__number--absent" id="stats-absent">0</span>
+                                <span class="attendance-band__label">absent</span>
+                            </div>
+                            <div class="attendance-band__divider"></div>
+                            <div id="dashboard-absent-list" class="attendance-band__names">
+                                <span style="color: var(--color-text-tertiary); font-style: italic;">All students present!</span>
+                            </div>
+                        </div>
+                        <div class="progress-bar" style="margin-top: var(--space-sm);">
+                            <div id="stats-progress" class="progress-bar__fill" style="width: 0%"></div>
                         </div>
                     </section>
-                    
-                    <!-- Attendance Summary -->
-                    <section class="dashboard__section">
-                      <h3 class="dashboard__section-title">Attendance Summary</h3>
-                      <div class="dashboard__section-content">
-                          <div class="card" style="padding: var(--space-md); margin-bottom: var(--space-md);">
-                              <div style="font-size: var(--font-size-caption); color: var(--color-text-secondary);">PRESENT TODAY</div>
-                              <div id="stats-present" style="font-size: var(--font-size-h2); font-weight: bold; color: var(--color-success);">0%</div>
-                              <div class="progress-bar mt-2">
-                                  <div id="stats-progress" class="progress-bar__fill" style="width: 0%"></div>
-                              </div>
-                          </div>
 
-                          <div class="card" style="padding: var(--space-md);">
-                              <div style="font-size: var(--font-size-caption); color: var(--color-text-secondary);">ABSENT NOW</div>
-                              <div id="stats-absent" style="font-size: var(--font-size-h2); font-weight: bold; color: var(--color-error);">0</div>
-                          </div>
-                      </div>
-                  </section>
-                  
-                  <!-- Tasks List -->
-                  <section class="dashboard__section">
-                      <h3>Tasks</h3>
-                      <div id="dashboard-tasks-list" style="margin-top: var(--space-base);">
-                          <p style="color: var(--color-text-tertiary); font-style: italic;">All caught up!</p>
-                      </div>
-                  </section> 
-
-                  <!-- Alerts Status Board -->
-                  <section class="dashboard__section" style="margin-top: var(--space-lg);">
-                      <div class="alerts-board" id="dashboard-alerts-board">
-                          <div class="alerts-board__header">
-                              <h3>📡 Live Alerts</h3>
-                              <span class="alerts-board__count" id="alerts-count" style="display:none;">0</span>
-                          </div>
-                          <div id="alerts-board-list">
-                              <div class="alerts-board__empty">No active alerts — everyone is on track!</div>
-                          </div>
-                      </div>
-                  </section>
-                    
-                    <section class="dashboard__section">
-                        <h3 style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-sm);">
-                            Wildcat Roster
-                            <button id="btn-send-roster-emails" class="btn btn--primary" onclick="pages.dashboard.sendRosterNotifications()" style="font-size: 0.8em; padding: 4px 12px; display: none;">
-                                Notify Teachers
-                            </button>
-                        </h3>
-                        <div class="dashboard__section" id="dashboard-wildcat-noshows">
-                            <div id="wildcat-noshows-list"></div>
-                        </div>
-                    </section>
-                  
-                    <!-- Alerts Grid -->
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--space-lg); margin-top: var(--space-2xl);">
+                    <!-- ROW 3: Two-column layout -->
+                    <div class="dashboard__row-split">
                         
-                        <!-- Wildcat Email Tasks -->
-                        <div class="dashboard__section" id="dashboard-wildcat-tasks">
-                            <h3 class="dashboard__section-title">Wildcat Emails</h3>
-                            <div id="wildcat-tasks-list"></div>
-                        </div>
+                        <!-- LEFT: Action Items (Tasks + Alerts) -->
+                        <section class="dashboard__section dashboard__action-panel">
+                            <h3 class="dashboard__section-title">Action Items</h3>
+                            <div id="dashboard-tasks-list">
+                                <p style="color: var(--color-text-tertiary); font-style: italic;">All caught up!</p>
+                            </div>
+                            <div id="dashboard-alerts-accordion"></div>
+                        </section>
 
-                        <!-- Station Cleanup Issues -->
-                        <div class="dashboard__section" id="dashboard-station-issues">
-                            <h3 class="dashboard__section-title">Station Issues</h3>
-                            <div id="station-issues-list"></div>
-                        </div>
+                        <!-- RIGHT: Info panels stacked -->
+                        <div class="dashboard__info-stack">
+                            
+                            <section class="dashboard__section">
+                                <h3 class="dashboard__section-title">Today's Events</h3>
+                                <div id="dashboard-events-list">
+                                    <p style="color: var(--color-text-tertiary); font-style: italic; padding: var(--space-sm);">No events scheduled for today.</p>
+                                </div>
+                            </section>
 
-                                                
+                            <section class="dashboard__section">
+                                <h3 class="dashboard__section-title" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-sm);">
+                                    Wildcat Roster
+                                    <button id="btn-send-roster-emails" class="btn btn--primary" onclick="pages.dashboard.sendRosterNotifications()" style="font-size: 0.8em; padding: 4px 12px; display: none;">
+                                        Notify Teachers
+                                    </button>
+                                </h3>
+                                <div id="dashboard-wildcat-noshows">
+                                    <div id="wildcat-noshows-list"></div>
+                                </div>
+                            </section>
+
+                            <section class="dashboard__section">
+                                <h3 class="dashboard__section-title">Station Issues</h3>
+                                <div id="station-issues-list"></div>
+                            </section>
+
+                            <section class="dashboard__section">
+                                <h3 class="dashboard__section-title">Wildcat Emails</h3>
+                                <div id="wildcat-tasks-list"></div>
+                            </section>
+
+                        </div>
                     </div>
             </section>
             
