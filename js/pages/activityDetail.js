@@ -739,6 +739,12 @@ pages.activityDetail = {
         const badge = document.getElementById('submissions-scoring-badge');
         const scoringType = activity.scoringType || 'complete-incomplete';
 
+        // Capture which student <details> cards are currently open so we can restore after re-render
+        const openStudentIds = new Set();
+        container.querySelectorAll('details[data-student-id]').forEach(d => {
+            if (d.open) openStudentIds.add(d.getAttribute('data-student-id'));
+        });
+
         const scoringLabels = { 'rubric': 'Rubric', 'points': 'Points', 'complete-incomplete': 'Complete/Incomplete' };
         badge.textContent = scoringLabels[scoringType] || 'Unknown';
 
@@ -895,6 +901,15 @@ pages.activityDetail = {
             const automationsOn = localStorage.getItem('automations-enabled') === 'true';
             const webhookUrl = localStorage.getItem('webhook_absent') || localStorage.getItem('webhook_wildcat');
             classroomBtn.style.display = (hasClassroomLink && automationsOn && webhookUrl) ? '' : 'none';
+        }
+
+        // Restore previously-open student <details> cards after re-render
+        if (openStudentIds.size > 0) {
+            container.querySelectorAll('details[data-student-id]').forEach(d => {
+                if (openStudentIds.has(d.getAttribute('data-student-id'))) {
+                    d.open = true;
+                }
+            });
         }
     },
 
@@ -1233,7 +1248,7 @@ pages.activityDetail = {
             const statusBorders = { 'not-started': '#dc2626', 'in-progress': '#eab308', 'submitted': '#16a34a', 'graded': '#3b82f6' };
             const currentStatus = sub?.status || 'not-started';
 
-            html += `<details style="border: 1px solid ${statusBorders[currentStatus] || 'var(--color-border)'}; border-left: 4px solid ${statusBorders[currentStatus] || 'var(--color-border)'}; border-radius: var(--radius-md); margin-bottom: var(--space-sm); background: ${statusColors[currentStatus] || ''};">
+            html += `<details data-student-id="${student.id}" style="border: 1px solid ${statusBorders[currentStatus] || 'var(--color-border)'}; border-left: 4px solid ${statusBorders[currentStatus] || 'var(--color-border)'}; border-radius: var(--radius-md); margin-bottom: var(--space-sm); background: ${statusColors[currentStatus] || ''};">
                 <summary style="display: flex; justify-content: space-between; align-items: center; padding: var(--space-base); cursor: pointer; user-select: none;">
                     <strong>${escapeHtml(displayName(student))}</strong>
                     <select onclick="event.stopPropagation()" onchange="pages.activityDetail.saveSubmission(${activity.id}, ${student.id}, this.value, null)" style="padding: 4px 8px; border-radius: var(--radius-sm); border: 1px solid var(--color-border);">
