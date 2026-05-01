@@ -787,16 +787,6 @@ changeSchedule: async function() {
         schedule: selectedSchedule
     }));
 
-    // Keep scheduleConfig in sync for legacy period detection fallback
-    const allSchedules = await db.scheduleConfig.toArray();
-    for (const schedule of allSchedules) {
-        await db.scheduleConfig.update(schedule.id, { isActive: false });
-    }
-    const activeSchedule = allSchedules.find(s => s.name === selectedSchedule);
-    if (activeSchedule) {
-        await db.scheduleConfig.update(activeSchedule.id, { isActive: true });
-    }
-    
     const scheduleLabels = {
         'normal': 'Normal Day',
         '2-hour-delay': '2-Hour Delay',
@@ -922,17 +912,7 @@ loadActiveSchedule: async function() {
         selector.value = scheduleToUse;
     }
 
-    // Step 4: Keep scheduleConfig in sync for legacy fallback
-    const allSchedules = await db.scheduleConfig.toArray();
-    for (const schedule of allSchedules) {
-        await db.scheduleConfig.update(schedule.id, { isActive: false });
-    }
-    const matchingSchedule = allSchedules.find(s => s.name === scheduleToUse);
-    if (matchingSchedule) {
-        await db.scheduleConfig.update(matchingSchedule.id, { isActive: true });
-    }
-
-    // Step 5: Show a toast if a non-normal schedule was auto-detected
+    // Step 4: Show a toast if a non-normal schedule was auto-detected
     if (wasAutoDetected && scheduleToUse !== 'normal') {
         const scheduleLabels = {
             '2-hour-delay': '2-Hour Delay',
