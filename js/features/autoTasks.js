@@ -657,17 +657,5 @@ const autoTasks = {
             console.error('Auto-submission initialization failed:', err);
         }
     },
-
-    // resolveCompleted now only handles inventory/checkout auto-tasks.
-    // Checkpoint/team/overdue alerts are handled by alertsEngine (auto-clear on refresh).
-    // Absence follow-up tasks NEVER auto-resolve — teacher must check them off.
-    async resolveCompleted() {
-        // No auto-resolution needed for current task types:
-        // - Low inventory: stays until manually dismissed
-        // - Overdue checkouts: stays until returned or dismissed
-        // - Absence follow-ups: stays until teacher marks done
-        // The old checkpoint/team resolution logic has moved to alertsEngine.refresh()
-        // which simply rebuilds the alerts table each time (stale alerts vanish).
-        return;
-    }
+    
 };
