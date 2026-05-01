@@ -84,7 +84,7 @@ function calculateFinalGrade(activity, studentId, submission, checkpoints, compl
                         count++;
                     }
                 });
-                assignmentScore = count > 0 ? total / count : 0;
+                assignmentScore = criteria.length > 0 ? total / criteria.length : 0;
             } else if (scoringType === 'points' && submission.score != null) {
                 const max = activity.defaultPoints || 100;
                 assignmentScore = submission.score / max;
