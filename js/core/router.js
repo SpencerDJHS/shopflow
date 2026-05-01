@@ -56,7 +56,7 @@ const router = {
         case 'activity-edit':    pages.activityEdit.render(state.editingActivityId); break;
         case 'checkpoint':       pages.checkpoint.render(); break;
         case 'inventory':        pages.inventory.render(); break;
-        case 'inventory-detail': pages.inventoryDetail.render(); break;
+        case 'inventory-detail': pages.inventory.render(); break;
         case 'calendar':         pages.calendar.render(); break;
         case 'tasks':            pages.tasks.render(); break;
         case 'progress':         pages.progress.render(); break;
