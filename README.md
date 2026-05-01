@@ -25,7 +25,7 @@ ShopFlow is a free, open-source progressive web app (PWA) that helps you manage 
 
 ## Setup Guide
 
-See the full [Teacher Setup Guide](LINK_TO_GOOGLE_DOC) for step-by-step instructions.
+See the full [Teacher Setup Guide](https://docs.google.com/document/d/1kNFZozu9BzQ_jCxCxG1fk-y0qXLMwjk_wjYkTNYLdYk/edit?usp=sharing) for step-by-step instructions.
 
 ## For Developers
 
