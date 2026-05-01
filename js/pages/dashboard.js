@@ -1300,51 +1300,38 @@ loadTasks: async function() {
         
         container.innerHTML = '';
 
-        // Render manual tasks
+        // Render manual tasks directly (always visible)
         if (manualTasks.length > 0) {
             manualTasks.forEach(task => {
                 container.appendChild(this.renderTaskRow(task));
             });
         }
 
-        // Render absence follow-up tasks with their own header
+        // Render absence follow-ups in a collapsible accordion (open by default — urgent)
         if (absenceFollowUps.length > 0) {
-            const header = document.createElement('div');
-            header.style.cssText = 'font-size: var(--font-size-body-small); font-weight: 600; color: var(--color-warning); padding: var(--space-sm) 0; margin-top: var(--space-sm); border-top: 1px solid var(--color-border); display: flex; align-items: center; gap: var(--space-xs);';
-            header.innerHTML = `🏠 Absence Follow-Ups (${absenceFollowUps.length})`;
-            container.appendChild(header);
-
+            const details = document.createElement('details');
+            details.className = 'action-accordion';
+            details.open = true;
+            details.innerHTML = `<summary>🏠 Absence Follow-Ups <span class="action-accordion__count action-accordion__count--warning">${absenceFollowUps.length}</span></summary>`;
+            const content = document.createElement('div');
             absenceFollowUps.forEach(task => {
-                container.appendChild(this.renderTaskRow(task, true));
+                content.appendChild(this.renderTaskRow(task, true));
             });
+            details.appendChild(content);
+            container.appendChild(details);
         }
 
-        // Render other auto-tasks (inventory, checkouts)
+        // Render other auto-tasks in a collapsible accordion (closed by default)
         if (otherAutoTasks.length > 0) {
-            const header = document.createElement('div');
-            header.style.cssText = 'font-size: var(--font-size-body-small); font-weight: 600; color: var(--color-text-secondary); padding: var(--space-sm) 0; margin-top: var(--space-sm); border-top: 1px solid var(--color-border); display: flex; align-items: center; gap: var(--space-xs);';
-            header.innerHTML = `⚡ Auto-Generated (${otherAutoTasks.length})`;
-            container.appendChild(header);
-
-            const visibleCount = 5;
-            otherAutoTasks.forEach((task, i) => {
-                const row = this.renderTaskRow(task, true);
-                if (i >= visibleCount) row.style.display = 'none';
-                row.classList.add('auto-task-row');
-                container.appendChild(row);
+            const details = document.createElement('details');
+            details.className = 'action-accordion';
+            details.innerHTML = `<summary>⚡ Auto-Generated <span class="action-accordion__count">${otherAutoTasks.length}</span></summary>`;
+            const content = document.createElement('div');
+            otherAutoTasks.forEach(task => {
+                content.appendChild(this.renderTaskRow(task, true));
             });
-
-            if (otherAutoTasks.length > visibleCount) {
-                const showMore = document.createElement('button');
-                showMore.className = 'btn btn--secondary';
-                showMore.style.cssText = 'font-size: var(--font-size-body-small); padding: var(--space-xs) var(--space-sm); margin-top: var(--space-xs);';
-                showMore.textContent = `Show All (${otherAutoTasks.length})`;
-                showMore.onclick = () => {
-                    container.querySelectorAll('.auto-task-row').forEach(r => r.style.display = '');
-                    showMore.remove();
-                };
-                container.appendChild(showMore);
-            }
+            details.appendChild(content);
+            container.appendChild(details);
         }
         
     } catch (error) {
@@ -1729,25 +1716,25 @@ startAutoCheckTimer: function() {
 },
 
 loadAlerts: async function() {
-    const listContainer = document.getElementById('alerts-board-list');
-    const countBadge = document.getElementById('alerts-count');
+    const container = document.getElementById('dashboard-alerts-accordion');
+    if (!container) return;
 
     try {
         const alerts = await db.alerts.toArray();
 
         if (alerts.length === 0) {
-            listContainer.innerHTML = '<div class="alerts-board__empty">No active alerts — everyone is on track!</div>';
-            countBadge.style.display = 'none';
+            container.innerHTML = '';
             return;
         }
 
-        countBadge.textContent = alerts.length;
-        countBadge.style.display = '';
+        // Build accordion
+        const details = document.createElement('details');
+        details.className = 'action-accordion';
+        details.innerHTML = `<summary>📡 Live Alerts <span class="action-accordion__count${alerts.length > 10 ? ' action-accordion__count--urgent' : ''}">${alerts.length}</span></summary>`;
 
-        // Group alerts by type for organized display
+        // Sort alerts by type
         const typeOrder = ['overdue', 'team', 'checkpoint'];
         const typeLabels = { checkpoint: '⚠️', team: '🏁', overdue: '🔴' };
-        const typeIconClass = { checkpoint: 'alert-row__icon--checkpoint', team: 'alert-row__icon--team', overdue: 'alert-row__icon--overdue' };
 
         alerts.sort((a, b) => {
             const ai = typeOrder.indexOf(a.type);
@@ -1756,7 +1743,7 @@ loadAlerts: async function() {
             return (a.title || '').localeCompare(b.title || '');
         });
 
-        listContainer.innerHTML = '';
+        const content = document.createElement('div');
 
         // Show first 8, collapse the rest
         const visibleCount = 8;
@@ -1770,14 +1757,7 @@ loadAlerts: async function() {
             if (hasLink) {
                 row.type = 'button';
                 row.setAttribute('aria-label', alert.title);
-                row.style.cursor = 'pointer';
-                row.style.background = 'none';
-                row.style.border = 'none';
-                row.style.width = '100%';
-                row.style.textAlign = 'left';
-                row.style.font = 'inherit';
-                row.style.padding = '';
-
+                row.style.cssText = 'cursor: pointer; background: none; border: none; width: 100%; text-align: left; font: inherit;';
                 row.onclick = () => {
                     if (alert.linkedEntityType === 'student') {
                         state.selectedStudent = alert.linkedEntityId;
@@ -1789,35 +1769,38 @@ loadAlerts: async function() {
                 };
             }
 
-            const iconClass = typeIconClass[alert.type] || 'alert-row__icon--checkpoint';
             const iconEmoji = typeLabels[alert.type] || '⚠️';
 
             row.innerHTML = `
-                <div class="alert-row__icon ${iconClass}">${iconEmoji}</div>
+                <div class="alert-row__icon">${iconEmoji}</div>
                 <div class="alert-row__body">
                     <div class="alert-row__title">${escapeHtml(alert.title)}</div>
                     <div class="alert-row__detail">${escapeHtml(alert.detail || '')}</div>
                 </div>
             `;
 
-            listContainer.appendChild(row);
+            content.appendChild(row);
         });
 
         if (alerts.length > visibleCount) {
             const showMore = document.createElement('button');
             showMore.className = 'btn btn--secondary';
-            showMore.style.cssText = 'font-size: var(--font-size-body-small); padding: var(--space-xs) var(--space-sm); margin: var(--space-sm) var(--space-md);';
+            showMore.style.cssText = 'font-size: var(--font-size-body-small); padding: var(--space-xs) var(--space-sm); margin: var(--space-sm) 0;';
             showMore.textContent = `Show All ${alerts.length} Alerts`;
             showMore.onclick = () => {
-                listContainer.querySelectorAll('.alert-board-row').forEach(r => r.style.display = '');
+                content.querySelectorAll('.alert-board-row').forEach(r => r.style.display = '');
                 showMore.remove();
             };
-            listContainer.appendChild(showMore);
+            content.appendChild(showMore);
         }
+
+        details.appendChild(content);
+        container.innerHTML = '';
+        container.appendChild(details);
 
     } catch (error) {
         console.error('Error loading alerts:', error);
-        listContainer.innerHTML = '<div class="alerts-board__empty" style="color: var(--color-error);">Failed to load alerts</div>';
+        container.innerHTML = '';
     }
 },
 
