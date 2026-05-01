@@ -102,9 +102,14 @@ function calculateFinalGrade(activity, studentId, submission, checkpoints, compl
         };
     }
 
-function getTodayString() {
-    const d = new Date();
+function formatDateString(d) {
+    if (!d) d = new Date();
+    if (typeof d === 'string') d = new Date(d);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function getTodayString() {
+    return formatDateString(new Date());
 }
 
 function downloadCSV(csvContent, filename) {
