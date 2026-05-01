@@ -2,8 +2,8 @@
 /* PAGE: DASHBOARD                            */
 /* ========================================== */
 .dashboard__grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    display: flex;
+    flex-direction: column;
     gap: var(--space-lg);
     margin-bottom: var(--space-xl);
 }
@@ -14,9 +14,6 @@
     border-radius: var(--radius-lg);
     padding: var(--space-lg);
     box-shadow: var(--shadow-card);
-    align-self: start;
-    max-height: 400px;
-    overflow-y: auto;
 }
 
 .dashboard__section-title {
@@ -24,6 +21,127 @@
     font-weight: 600;
     margin-bottom: var(--space-base);
     color: var(--color-text-primary);
+}
+
+/* Full-width rows */
+.dashboard__row-full {
+    width: 100%;
+}
+
+/* Two-column split (Row 3) */
+.dashboard__row-split {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: var(--space-lg);
+    align-items: start;
+}
+
+/* Right column stacked panels */
+.dashboard__info-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+}
+
+/* Action panel scroll limit */
+.dashboard__action-panel {
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+/* ---- Attendance Band ---- */
+.attendance-band {
+    display: flex;
+    align-items: center;
+    gap: var(--space-lg);
+    flex-wrap: wrap;
+}
+
+.attendance-band__stat {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-xs);
+}
+
+.attendance-band__number {
+    font-size: var(--font-size-h2);
+    font-weight: 700;
+}
+
+.attendance-band__number--present {
+    color: var(--color-success);
+}
+
+.attendance-band__number--absent {
+    color: var(--color-error);
+}
+
+.attendance-band__label {
+    font-size: var(--font-size-body-small);
+    color: var(--color-text-secondary);
+}
+
+.attendance-band__divider {
+    width: 1px;
+    height: 28px;
+    background: var(--color-border);
+}
+
+.attendance-band__names {
+    display: flex;
+    gap: var(--space-xs);
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+/* ---- Action Accordion (Tasks + Alerts) ---- */
+.action-accordion {
+    border-top: 1px solid var(--color-border);
+    margin-top: var(--space-base);
+}
+
+.action-accordion summary {
+    cursor: pointer;
+    padding: var(--space-sm) 0;
+    font-size: var(--font-size-body-small);
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    list-style: none;
+}
+
+.action-accordion summary::-webkit-details-marker {
+    display: none;
+}
+
+.action-accordion summary::before {
+    content: '▶';
+    font-size: 10px;
+    transition: transform 0.2s;
+}
+
+.action-accordion[open] summary::before {
+    transform: rotate(90deg);
+}
+
+.action-accordion__count {
+    background: var(--color-text-tertiary);
+    color: var(--color-background);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 1px 7px;
+    border-radius: 999px;
+    margin-left: auto;
+}
+
+.action-accordion__count--urgent {
+    background: var(--color-error);
+}
+
+.action-accordion__count--warning {
+    background: var(--color-warning);
 }
 
 .dashboard__quick-actions {
