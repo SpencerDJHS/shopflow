@@ -899,3 +899,78 @@
         background-color: unset;
     }
 }
+
+/* ========================================== */
+/* SETUP / ONBOARDING CARD                    */
+/* ========================================== */
+.setup-card {
+    background: var(--color-background);
+    border: 2px solid var(--color-primary);
+    border-radius: var(--radius-lg);
+    padding: var(--space-base) var(--space-lg);
+}
+
+.setup-card__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-xs);
+}
+
+.setup-card__title {
+    font-size: var(--font-size-body-large);
+    font-weight: 700;
+    margin: 0;
+}
+
+.setup-card__subtitle {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-body-small);
+    margin: 0 0 var(--space-sm) 0;
+}
+
+.setup-card__checklist {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+}
+
+.setup-card__item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: var(--space-sm) var(--space-base);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-body);
+    transition: background 0.15s;
+}
+
+.setup-card__item--done {
+    color: var(--color-text-tertiary);
+    text-decoration: line-through;
+}
+
+.setup-card__item--pending {
+    cursor: pointer;
+    color: var(--color-text);
+    background: var(--color-background-secondary);
+}
+
+.setup-card__item--pending:hover {
+    background: var(--color-background-tertiary, rgba(0,0,0,0.06));
+}
+
+.setup-card__icon {
+    font-size: 1.2em;
+    width: 1.5em;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.setup-card__done-banner {
+    text-align: center;
+    padding: var(--space-base);
+    color: var(--color-success);
+    font-weight: 600;
+    font-size: var(--font-size-body-large);
+}
