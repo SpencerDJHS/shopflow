@@ -3,7 +3,8 @@
 // ============================================
 
 const ui = {
-    showToast: function(message, type = 'info', duration = 3000) {
+    showToast: function(message, type = 'info', duration = null) {
+        if (duration === null) duration = (type === 'error') ? 5000 : 3000;
         const container = document.getElementById('toast-container');
         const toast = document.createElement('div');
         toast.className = `toast toast--${type}`;
