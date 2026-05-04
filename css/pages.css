@@ -734,3 +734,13 @@
     color: white !important;
     border-color: var(--color-primary) !important;
 }
+
+@media (hover: none) {
+    .attendance__student-item:hover,
+    .attendance__remove-btn:hover,
+    .team-card:hover,
+    .fe-material-remove:hover,
+    .checkpoint__student-item:hover {
+        background-color: unset;
+    }
+}
