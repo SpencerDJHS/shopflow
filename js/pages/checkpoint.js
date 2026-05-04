@@ -22,6 +22,11 @@ pages.checkpoint = {
         const classes = (await db.classes.toArray()).filter(c => c.status !== 'archived');
         container.innerHTML = '';
 
+        if (classes.length === 0) {
+            container.innerHTML = '<p style="color: var(--color-text-secondary); padding: var(--space-base);">No classes found. <a href="#" onclick="router.navigate(\'settings\'); setTimeout(() => { const tab = document.querySelector(\'[data-tab=\\\'classes\\\']\'); if (tab) tab.click(); }, 100); return false;" style="color: var(--color-primary); text-decoration: underline;">Go to Settings → Classes</a> to create your first class.</p>';
+            return;
+        }
+
         classes.forEach(cls => {
             const btn = document.createElement('button');
             btn.className = 'btn btn--secondary checkpoint-year-btn';
