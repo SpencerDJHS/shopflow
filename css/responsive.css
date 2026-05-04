@@ -15,6 +15,7 @@
         top: 60px;
         left: 0;
         height: calc(100vh - 60px);
+        height: calc(100dvh - 60px);
         width: 250px;
         z-index: 150;
         box-shadow: var(--shadow-modal);
