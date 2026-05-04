@@ -749,7 +749,7 @@ pages.progress = {
 
         try {
             // Load all students in this class
-            const allStudents = await db.students.toArray();
+            const allStudents = excludeDeleted(await db.students.toArray());
             const students = allStudents
                 .filter(s => s.classId === cls.id && (s.status || 'active') === 'active')
                 .sort(sortByStudentName);
