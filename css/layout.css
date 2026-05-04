@@ -9,6 +9,7 @@
         "header header"
         "sidebar main";
     height: 100vh;
+    height: 100dvh;
     overflow: hidden;
 }
 
@@ -175,4 +176,29 @@
     font-size: var(--font-size-body);
     color: var(--color-text-secondary);
     margin-top: var(--space-xs);
+}
+
+/* ========================================== */
+/* OFFLINE INDICATOR                          */
+/* ========================================== */
+.offline-bar {
+    background: var(--color-warning);
+    color: #111;
+    text-align: center;
+    padding: 6px var(--space-base);
+    font-size: var(--font-size-body-small);
+    font-weight: 500;
+    grid-column: 1 / -1;
+}
+
+.offline-bar.hidden {
+    display: none;
+}
+
+@media (hover: none) {
+    .search-result-item:hover,
+    .header__profile:hover,
+    .sidebar__nav-item a:hover {
+        background-color: unset;
+    }
 }
