@@ -82,7 +82,7 @@ pages.attendance = {
             // Fetch Database Records
             const allStudents = excludeDeleted(await db.students.toArray());
             if (allStudents.length === 0) {
-                studentList.innerHTML = '<p style="text-align: center; color: var(--color-text-tertiary); padding: var(--space-2xl);">No students in the system.</p>';
+                studentList.innerHTML = '<p style="text-align: center; color: var(--color-text-secondary); padding: var(--space-2xl);">No students added yet. <a href="#" onclick="router.navigate(\'students\'); return false;" style="color: var(--color-primary); text-decoration: underline;">Go to Students</a> to add students, or import a CSV from <a href="#" onclick="router.navigate(\'settings\'); setTimeout(() => { const tab = document.querySelector(\'[data-tab=\\\'data\\\']\'); if (tab) tab.click(); }, 100); return false;" style="color: var(--color-primary); text-decoration: underline;">Settings → Data</a>.</p>';
                 return;
             }
             
