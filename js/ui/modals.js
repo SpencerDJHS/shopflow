@@ -406,7 +406,7 @@ const modals = {
         container.innerHTML = '';
         
         try {
-            const students = await db.students.toArray();
+            const students = excludeDeleted(await db.students.toArray());
             students.sort(sortByStudentName);
             
             if (students.length === 0) {
@@ -1547,7 +1547,7 @@ const modals = {
             }
             
             // Get student and item details
-            const allStudents = await db.students.toArray();
+            const allStudents = excludeDeleted(await db.students.toArray());
             const allItems = await db.inventory.toArray();
             
             // Group by student
@@ -1840,7 +1840,7 @@ const modals = {
             const periodEnrollments = allEnrollments.filter(e => e.period === period);
             const studentIds = periodEnrollments.map(e => e.studentId);
             
-            const allStudents = await db.students.toArray();
+            const allStudents = excludeDeleted(await db.students.toArray());
             const periodStudents = allStudents
                 .filter(s => studentIds.includes(s.id))
                 .sort(sortByStudentName);
@@ -2296,7 +2296,7 @@ const modals = {
                             name: t.name || '',
                             quantity: t.quantity || '',
                             location: inventoryByName[(t.name || '').toLowerCase().trim()] || 'Unknown'
-                        }));classroomUrl = 'https://classroom.google.com/c/' + courseId + '/a/' + cwId + '/details';
+                        }));
 
                         const materialsWithLocation = (activity.requiredMaterials || []).map(m => ({
                             name: m.name || '',
@@ -2366,7 +2366,9 @@ const modals = {
                             method: 'POST',
                             body: JSON.stringify(payload)
                         });
-                        const result = await response.json();
+                        const resultText = await response.text();
+                        console.log('Hub sync response:', response.status, resultText);
+                        const result = JSON.parse(resultText);
                         
                         if (result.status === 'success') {
                             const now = new Date().toISOString();
@@ -2516,7 +2518,7 @@ const modals = {
             `;
             
             // Load students with smart ordering
-            const allStudents = await db.students.toArray();
+            const allStudents = excludeDeleted(await db.students.toArray());
             
             // Get current period from header dropdown
             const headerPeriodSelect = document.getElementById('period-select');
@@ -2628,7 +2630,7 @@ const modals = {
                 return;
             }
             
-            const allStudents = await db.students.toArray();
+            const allStudents = excludeDeleted(await db.students.toArray());
             
             container.innerHTML = '';
             for (const checkout of checkouts) {
