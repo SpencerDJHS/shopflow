@@ -363,6 +363,18 @@
 
                 <!-- Dashboard Grid -->
                 <div class="dashboard__grid">
+
+                    <!-- ROW 0: Getting Started (only visible during setup) -->
+                    <section id="dashboard-setup-card" class="dashboard__section dashboard__row-full" style="display: none;">
+                        <div class="setup-card">
+                            <div class="setup-card__header">
+                                <h3 class="setup-card__title">🚀 Getting Started</h3>
+                                <button id="setup-card-dismiss" class="btn btn--secondary" style="font-size: var(--font-size-body-small); padding: var(--space-xs) var(--space-sm); display: none;" onclick="pages.dashboard.dismissSetupCard()">Dismiss</button>
+                            </div>
+                            <p class="setup-card__subtitle">Complete these steps to get your classroom up and running:</p>
+                            <div id="setup-checklist" class="setup-card__checklist"></div>
+                        </div>
+                    </section>
                     
                     <!-- ROW 1: Active Assignments (full width) -->
                     <section class="dashboard__section dashboard__row-full">
