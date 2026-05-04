@@ -414,7 +414,7 @@ pages.skills = {
         const items = excludeDeleted(await db.inventory.toArray())
             .filter(i => i.category === 'tools' || i.category === 'electronics' || i.category === 'safety');
         const allCerts = await db.certifications.toArray();
-        const allStudents = await db.students.toArray();
+        const allStudents = excludeDeleted(await db.students.toArray());
 
         if (items.length === 0) {
             container.innerHTML = '<p style="color: var(--color-text-tertiary); font-style: italic; padding: var(--space-lg);">No tools or equipment found in inventory. Add items in the Inventory page first (categories: Tools, Electronics, or Safety Equipment).</p>';
