@@ -44,6 +44,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (e.key === 'Escape') globalSearch.close();
     });
 
+    // Close topmost modal on Escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            const openModals = document.querySelectorAll('.modal-backdrop:not(.hidden)');
+            if (openModals.length > 0) {
+                const topModal = openModals[openModals.length - 1];
+                ui.hideModal(topModal.id);
+            }
+        }
+    });
+
     // Quick action buttons
     document.querySelectorAll('[data-action]').forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -107,3 +118,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (el) el.textContent = `📅 ${year}`;
     });
 });
+
+// Offline/online indicator
+function updateOfflineBar() {
+    const bar = document.getElementById('offline-bar');
+    if (bar) {
+        bar.classList.toggle('hidden', navigator.onLine);
+    }
+}
+window.addEventListener('online', updateOfflineBar);
+window.addEventListener('offline', updateOfflineBar);
+updateOfflineBar();
