@@ -9,6 +9,7 @@ const state = {
     selectedTeam: null,
     selectedActivity: null,
     editingStudentId: null,
+    flexPeriodName: 'Wildcat',
 
     updateCurrentPage: function(page) {
         this.currentPage = page;
