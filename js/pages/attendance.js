@@ -80,7 +80,7 @@ pages.attendance = {
       
         try {
             // Fetch Database Records
-            const allStudents = await db.students.toArray();
+            const allStudents = excludeDeleted(await db.students.toArray());
             if (allStudents.length === 0) {
                 studentList.innerHTML = '<p style="text-align: center; color: var(--color-text-tertiary); padding: var(--space-2xl);">No students in the system.</p>';
                 return;
