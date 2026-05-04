@@ -23,7 +23,7 @@ pages.teams = {
             
             // Load team members for all teams
             const teamMembers = await db.teamMembers.toArray();
-            const allStudents = await db.students.toArray();
+            const allStudents = excludeDeleted(await db.students.toArray());
             
             // Create map of studentId to student
             const studentMap = {};
