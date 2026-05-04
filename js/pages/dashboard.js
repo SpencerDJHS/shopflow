@@ -11,6 +11,9 @@ pages.dashboard = {
         // Sprint 13.3: Render quick action buttons
         await this.renderQuickActions();
 
+        // Onboarding: Show setup progress card if setup is incomplete
+        await this.renderSetupCard();
+
         try {
             // Get today's date string in LOCAL timezone, not UTC
             const todayString = getTodayString();
@@ -145,6 +148,97 @@ pages.dashboard = {
     // Load today's events
     this.loadTodaysEvents();
     },
+
+renderSetupCard: async function() {
+    const card = document.getElementById('dashboard-setup-card');
+    const checklist = document.getElementById('setup-checklist');
+    const dismissBtn = document.getElementById('setup-card-dismiss');
+    if (!card || !checklist) return;
+
+    // If teacher already dismissed, hide and bail
+    const completedFlag = await db.settings.get('setup-complete');
+    if (completedFlag && completedFlag.value === true) {
+        card.style.display = 'none';
+        return;
+    }
+
+    // Run the four checks
+    const classCount = await db.classes.count();
+    const yearStart = await db.settings.get('school-year');
+    const periodMap = await db.settings.get('period-year-map');
+    const allStudents = excludeDeleted(await db.students.toArray());
+
+    const steps = [
+        {
+            label: 'Create at least one class',
+            done: classCount > 0,
+            action: () => { router.navigate('settings'); setTimeout(() => { const tab = document.querySelector('[data-tab="classes"]'); if (tab) tab.click(); }, 100); }
+        },
+        {
+            label: 'Set school year dates',
+            done: !!(yearStart && yearStart.value && yearStart.value.start),
+            action: () => { router.navigate('settings'); setTimeout(() => { const tab = document.querySelector('[data-tab="school-year"]'); if (tab) tab.click(); }, 100); }
+        },
+        {
+            label: 'Map periods to classes',
+            done: !!(periodMap && periodMap.value && Object.values(periodMap.value).some(v => v)),
+            action: () => { router.navigate('settings'); setTimeout(() => { const tab = document.querySelector('[data-tab="classes"]'); if (tab) tab.click(); }, 100); }
+        },
+        {
+            label: 'Add students',
+            done: allStudents.length > 0,
+            action: () => { router.navigate('students'); }
+        }
+    ];
+
+    const allDone = steps.every(s => s.done);
+
+    if (allDone) {
+        // Show a dismissible "You're all set!" banner
+        checklist.innerHTML = '';
+        const banner = document.createElement('div');
+        banner.className = 'setup-card__done-banner';
+        banner.textContent = '✅ You\'re all set! Your classroom is configured.';
+        checklist.appendChild(banner);
+        dismissBtn.style.display = '';
+        card.style.display = '';
+        return;
+    }
+
+    // Build the checklist UI
+    checklist.innerHTML = '';
+    dismissBtn.style.display = 'none';
+
+    steps.forEach(step => {
+        const row = document.createElement('div');
+        row.className = 'setup-card__item ' + (step.done ? 'setup-card__item--done' : 'setup-card__item--pending');
+
+        const icon = document.createElement('span');
+        icon.className = 'setup-card__icon';
+        icon.textContent = step.done ? '☑' : '☐';
+
+        const label = document.createElement('span');
+        label.textContent = step.label;
+
+        row.appendChild(icon);
+        row.appendChild(label);
+
+        if (!step.done) {
+            row.onclick = step.action;
+        }
+
+        checklist.appendChild(row);
+    });
+
+    card.style.display = '';
+},
+
+dismissSetupCard: async function() {
+    await db.settings.put({ key: 'setup-complete', value: true });
+    const card = document.getElementById('dashboard-setup-card');
+    if (card) card.style.display = 'none';
+    ui.showToast('Setup card dismissed. You can always adjust settings later.', 'success');
+},
 
 initPullToRefresh: function() {
     // Only attach once
@@ -1014,7 +1108,12 @@ loadActiveAssignments: async function() {
         );
 
         if (activeActivities.length === 0) {
-            container.innerHTML = '<p style="color: var(--color-text-tertiary); font-style: italic;">No active assignments right now.</p>';
+            const totalActivities = allActivities.length;
+            if (totalActivities === 0) {
+                container.innerHTML = '<p style="color: var(--color-text-secondary); padding: var(--space-sm);">No assignments yet. <a href="#" onclick="router.navigate(\'activities\'); return false;" style="color: var(--color-primary); text-decoration: underline;">Go to Assignments</a> in the sidebar to create your first one.</p>';
+            } else {
+                container.innerHTML = '<p style="color: var(--color-text-tertiary); font-style: italic;">No active assignments right now.</p>';
+            }
             return;
         }
 
@@ -1269,7 +1368,12 @@ loadTasks: async function() {
         });
         
         if (pendingTasks.length === 0) {
-            container.innerHTML = '<p style="color: var(--color-text-tertiary); font-style: italic;">All caught up!</p>';
+            const classCount = await db.classes.count();
+            if (classCount === 0) {
+                container.innerHTML = '<p style="color: var(--color-text-secondary); padding: var(--space-sm);">No classes configured yet. <a href="#" onclick="router.navigate(\'settings\'); setTimeout(() => { const tab = document.querySelector(\'[data-tab=\\\'classes\\\']\'); if (tab) tab.click(); }, 100); return false;" style="color: var(--color-primary); text-decoration: underline;">Go to Settings → Classes</a> to create your first class.</p>';
+            } else {
+                container.innerHTML = '<p style="color: var(--color-text-tertiary); font-style: italic;">All caught up!</p>';
+            }
             return;
         }
 
