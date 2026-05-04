@@ -1643,7 +1643,7 @@ pages.activityDetail = {
                 .toArray();
 
             // Build grades array: only include students who have a score and an email
-            const allStudents = await db.students.toArray();
+            const allStudents = excludeDeleted(await db.students.toArray());
             const studentMap = {};
             allStudents.forEach(function(s) { studentMap[String(s.id)] = s; });
 
@@ -1930,7 +1930,7 @@ pages.activityDetail = {
             );
 
             // Load students for names and emails
-            const students = await db.students.toArray();
+            const students = excludeDeleted(await db.students.toArray());
             const studentMap = new Map(students.map(s => [s.id, s]));
 
             // Build the feedbacks array, skipping already-sent and no-email students
