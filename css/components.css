@@ -459,6 +459,18 @@
     box-shadow: 0 0 0 3px var(--color-primary-light);
 }
 
+.btn:focus-visible,
+.btn--icon:focus-visible,
+.modal__close:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
+.sidebar__nav-item a:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: -2px;
+}
+
 .form-input--error {
     border-color: var(--color-error);
 }
@@ -869,4 +881,21 @@
 .empty-state p {
     margin-top: var(--space-base);
     font-size: var(--font-size-body-large);
+}
+
+/* ========================================== */
+/* HOVER: Only apply on devices that support hover */
+/* ========================================== */
+@media (hover: none) {
+    .card:hover,
+    .alert-row:hover,
+    .btn--primary:hover,
+    .btn--secondary:hover,
+    .btn--danger:hover,
+    .btn--warning:hover,
+    .btn--icon:hover,
+    .list__item:hover,
+    .modal__close:hover {
+        background-color: unset;
+    }
 }
