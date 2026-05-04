@@ -223,7 +223,7 @@ pages.checkpoint = {
 
         try {
             const teamMemberRecords = await db.teamMembers.where('teamId').equals(team.id).toArray();
-            const allStudents = await db.students.toArray();
+            const allStudents = excludeDeleted(await db.students.toArray());
             this.teamMembers = allStudents
                 .filter(s => teamMemberRecords.map(tm => tm.studentId).includes(s.id))
                 .sort(sortByStudentName);
