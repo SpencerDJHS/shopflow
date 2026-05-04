@@ -284,7 +284,7 @@ loadWildcatTasks: async function() {
     
     const isAutomationEnabled = localStorage.getItem('automations-enabled') === 'true'; 
     if (isAutomationEnabled) {
-        section.classList.add('hidden');
+        if (section) section.classList.add('hidden');
         return;
     }
 
@@ -292,7 +292,7 @@ loadWildcatTasks: async function() {
     const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
     try {
-        const allStudents = await db.students.toArray();
+        const allStudents = excludeDeleted(await db.students.toArray());
         container.innerHTML = '';
         let hasPendingTasks = false;
 
@@ -557,7 +557,7 @@ loadWildcatRoster: async function() {
         rosterBtn.style.display = (automationsOn && webhookExists) ? 'inline-flex' : 'none';
         
         // Get student names
-        const allStudents = await db.students.toArray();
+        const allStudents = excludeDeleted(await db.students.toArray());
         const renderedStudentIds = new Set();
 
         // Display drop-in roster
@@ -635,7 +635,7 @@ sendRosterNotifications: async function() {
     try {
         // Step 2: Gather all drop-in students for today
         // (This mirrors the same logic loadWildcatRoster uses)
-        const allStudents = await db.students.toArray();
+        const allStudents = excludeDeleted(await db.students.toArray());
 
         // Figure out who is PERMANENTLY enrolled in Wildcat (we skip these)
         const enrolledInWildcat = await db.enrollments.filter(e => e.period === 'wildcat').toArray();
@@ -1475,7 +1475,7 @@ checkAllFormSubmissions: async function(btn) {
     btn.disabled = true;
 
     // Load student email map once (shared across all assignments)
-    const allStudents = await db.students.toArray();
+    const allStudents = excludeDeleted(await db.students.toArray());
     const periodMap = await db.settings.get('period-year-map');
     const classPeriodsMap = periodMap?.value || {};
     const activeYear = await getActiveSchoolYear();
