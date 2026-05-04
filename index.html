@@ -318,9 +318,14 @@
         </aside>
         
         
-        <!-- ======================================== -->
-        <!-- MAIN CONTENT AREA                        -->
-        <!-- ======================================== -->
+        <!-- Offline indicator -->
+    <div id="offline-bar" class="offline-bar hidden">
+        ⚡ You're offline — changes are saved locally and will sync when reconnected.
+    </div>
+
+    <!-- ============================================ -->
+    <!-- MAIN CONTENT AREA                            -->
+    <!-- ============================================ -->
         <main class="main-content">
             
             <!-- ==================================== -->
@@ -3028,7 +3033,7 @@
     <!-- ============================================ -->
     <!-- TOAST NOTIFICATION CONTAINER                 -->
     <!-- ============================================ -->
-    <div id="toast-container" class="toast-container">
+    <div id="toast-container" class="toast-container" aria-live="polite" role="status">
         <!-- Toasts will be dynamically inserted here -->
     </div>
                
