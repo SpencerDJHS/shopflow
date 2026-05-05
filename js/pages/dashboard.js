@@ -407,7 +407,7 @@ loadWildcatTasks: async function() {
                 <input type="checkbox" id="wildcat-check-signup-${record.id}" onchange="pages.dashboard.markWildcatComplete(${record.id}, 'signup')">
                 <label for="wildcat-check-signup-${record.id}" style="flex: 1; cursor: pointer;">
                     <strong>${escapeHtml(displayName(student))}</strong>${escapeHtml(student.wildcatTeacher) ? ` → ${escapeHtml(student.wildcatTeacher)}` : ''}
-                    <div style="font-size: 0.8em; color: var(--color-text-tertiary);">Sign-up Notification · Wildcat on ${escapeHtml(record.targetDate)}</div>
+                    <div style="font-size: 0.8em; color: var(--color-text-tertiary);">Sign-up Notification · ${escapeHtml(state.flexPeriodName)} on ${escapeHtml(record.targetDate)}</div>
                 </label>
                 <span class="badge badge--warning">Email Needed</span>
                 <button onclick="pages.dashboard.cancelWildcatSignup(${record.id})" style="margin-left: var(--space-xs); background: none; border: 1px solid var(--color-error); color: var(--color-error); border-radius: var(--radius-sm); padding: 2px 8px; cursor: pointer; font-size: 0.8em;">✕ Cancel</button>
@@ -456,7 +456,7 @@ loadWildcatTasks: async function() {
 
         section.classList.remove('hidden');
         if (!hasPendingTasks) {
-            container.innerHTML = '<p style="color: var(--color-text-tertiary); font-style: italic;">No pending Wildcat emails</p>';
+            container.innerHTML = `<p style="color: var(--color-text-tertiary); font-style: italic;">No pending ${escapeHtml(state.flexPeriodName)} emails</p>`;
         }
 
     } catch (error) {
@@ -466,10 +466,10 @@ loadWildcatTasks: async function() {
 },
 
 cancelWildcatSignup: async function(scheduleId) {
-    if (!confirm('Remove this student from the Wildcat signup list?')) return;
+    if (!confirm(`Remove this student from the ${state.flexPeriodName} signup list?`)) return;
     try {
         await db.wildcatSchedule.update(scheduleId, { status: 'cancelled', updatedAt: new Date().toISOString() });
-        ui.showToast('Wildcat signup cancelled', 'success');
+        ui.showToast(`${state.flexPeriodName} signup cancelled`, 'success');
     } catch (e) {
         console.error('Error cancelling signup:', e);
     }
@@ -639,7 +639,7 @@ loadWildcatRoster: async function() {
         } catch (e) { /* ignore */ }
 
         if (dropInRecords.length === 0 && pendingStudentIds.length === 0) {
-            container.innerHTML = '<p style="color: var(--color-text-tertiary); font-style: italic;">No Wildcat drop-ins today</p>';
+            container.innerHTML = `<p style="color: var(--color-text-tertiary); font-style: italic;">No ${escapeHtml(state.flexPeriodName)} drop-ins today</p>`;
             document.getElementById('btn-send-roster-emails').style.display = 'none';
             return;
         }
