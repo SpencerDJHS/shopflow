@@ -4,7 +4,7 @@
 // Update CACHE_VERSION when deploying changes.
 // ============================================
 
-const CACHE_VERSION = 'esb-v56';
+const CACHE_VERSION = 'esb-v57';
 
 const EXTERNAL_SCRIPTS = [
     'https://unpkg.com/dexie@4.0.8/dist/dexie.js',
@@ -132,12 +132,14 @@ self.addEventListener('fetch', event => {
     // For local files — network first, update cache in background
     const requestUrl = new URL(event.request.url);
     if (LOCAL_FILES.some(f => requestUrl.pathname.endsWith(f.replace('./', '')))) {
+        const reqClone = event.request.clone();
         event.respondWith(
             fetch(event.request)
                 .then(response => {
                     if (response && response.ok) {
+                        const respClone = response.clone();
                         caches.open(CACHE_VERSION)
-                            .then(cache => cache.put(event.request, response.clone()));
+                            .then(cache => cache.put(reqClone, respClone));
                     }
                     return response;
                 })
