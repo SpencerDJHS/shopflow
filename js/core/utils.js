@@ -311,3 +311,9 @@ async function getCalculatedSkillLevels(studentId) {
     }
     return result;
 }
+
+// Returns the display label for a period value
+function periodLabel(periodValue) {
+    if (periodValue === 'wildcat') return state.flexPeriodName;
+    return `Period ${periodValue}`;
+}
