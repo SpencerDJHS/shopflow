@@ -225,14 +225,9 @@ const modals = {
                 driveSync.markDirty(); ui.showToast('Student added successfully', 'success');
             }
 
-            // Add new enrollments tagged with active school year
+            // Add new enrollments tagged with active school year (dedup at write time)
             for (const period of periods) {
-                await db.enrollments.add({
-                    studentId: studentId,
-                    period: period,
-                    schoolYear: activeYear,
-                    createdAt: new Date().toISOString()
-                });
+                await ensureEnrollment(studentId, period, activeYear);
             }
             
             this.hideStudentModal();
