@@ -17,7 +17,7 @@ pages.teams = {
             }
             
             if (teams.length === 0) {
-                grid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: var(--color-text-tertiary); padding: var(--space-2xl);">No groups found. Click "+ Create Group" to get started.</p>';
+                grid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: var(--color-text-tertiary); padding: var(--space-2xl);">No teams found. Click "+ Create Team" to get started.</p>';
                 return;
             }
             
@@ -100,7 +100,7 @@ pages.teams = {
             driveSync.markDirty(); await logAction('delete', 'team', id, `Deleted group ${team.name}`);
             this.render();
 
-            ui.showUndoToast(`Group "${team.name}" deleted`, async () => {
+            ui.showUndoToast(`Team "${team.name}" deleted`, async () => {
                 await db.teams.update(id, { deletedAt: null });
                 driveSync.markDirty(); await logAction('undo', 'team', id, `Undid delete of group ${team.name}`);
                 this.render();
