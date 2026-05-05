@@ -104,6 +104,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     // APP START
     // ============================================
 
+    // Load configurable flex period name
+    const flexSetting = await db.settings.get('flex-period-name');
+    if (flexSetting && flexSetting.value) {
+        state.flexPeriodName = flexSetting.value;
+    }
+    // Update all static HTML elements that display the flex period name
+    document.querySelectorAll('[data-flex-label]').forEach(el => {
+        el.textContent = state.flexPeriodName;
+    });
+
     await initializePeriodYearMap();
     await migrateLastExportTimestamp();
     await requestStoragePersistence();
