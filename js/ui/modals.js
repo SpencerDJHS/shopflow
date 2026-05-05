@@ -1512,6 +1512,28 @@ const modals = {
     },
 
     showEndClass: async function() {
+        // Load end-class step visibility from settings
+        const stepsSetting = await db.settings.get('end-class-steps');
+        const steps = stepsSetting?.value || {
+            stationCheckout: true,
+            returnTools: true,
+            pcRestart: true,
+            absentNotifications: true,
+            wildcatScheduling: true,
+            hubSync: true
+        };
+
+        // Show/hide each step card
+        document.querySelectorAll('.end-class-step').forEach(card => {
+            const stepKey = card.dataset.step;
+            if (stepKey && steps[stepKey] === false) {
+                card.style.display = 'none';
+            } else if (stepKey !== 'hubSync') {
+                // hubSync has its own display logic, don't override it here
+                card.style.display = '';
+            }
+        });
+
         document.getElementById('modal-end-class').classList.remove('hidden');
         
         // Auto-select current period
@@ -1519,7 +1541,7 @@ const modals = {
         if (period && period !== 'wildcat') {
             document.getElementById('end-class-period').value = period;
             await this.loadEndClassTeams();
-            await this.loadBorrowedTools(); // NEW: Load borrowed tools
+            await this.loadBorrowedTools();
         }
     },
 
