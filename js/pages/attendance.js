@@ -158,7 +158,7 @@ pages.attendance = {
             if (enrolledStudents.length > 0) {
                 const header = document.createElement('div');
                 header.style.cssText = 'padding: var(--space-md) var(--space-lg); background-color: var(--color-primary-light); font-weight: 600; color: var(--color-primary); border-bottom: 2px solid var(--color-primary);';
-                header.textContent = selectedPeriod === 'wildcat' ? 'Expected at Wildcat' : `Enrolled in Period ${selectedPeriod}`;
+                header.textContent = selectedPeriod === 'wildcat' ? `Expected at ${state.flexPeriodName}` : `Enrolled in Period ${selectedPeriod}`;
                 studentList.appendChild(header);
                 
                 enrolledStudents.forEach(student => {
