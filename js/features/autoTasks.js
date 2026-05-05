@@ -598,12 +598,21 @@ const autoTasks = {
 
             if (activities.length === 0) return;
 
-            const allSubmissions = await db.submissions.toArray();
-            const allAttendance = await db.attendance.toArray();
             const periodMap = await db.settings.get('period-year-map');
             const classPeriodsMap = periodMap?.value || {};
             const activeYear = await getActiveSchoolYear();
-            const allEnrollments = await db.enrollments.toArray();
+
+            // Scope queries to current-year data only
+            const activeActivityIds = new Set(activities.map(a => a.id));
+            const allSubmissions = (await db.submissions.toArray())
+                .filter(s => activeActivityIds.has(s.activityId));
+
+            const startDates = [...new Set(activities.map(a => a.startDate).filter(Boolean))];
+            const allAttendance = (await db.attendance.toArray())
+                .filter(a => startDates.includes(a.date));
+
+            const allEnrollments = (await db.enrollments.toArray())
+                .filter(e => !e.schoolYear || e.schoolYear === activeYear);
             const allStudents = excludeDeleted(await db.students.toArray())
                 .filter(s => (s.status || 'active') === 'active');
 
