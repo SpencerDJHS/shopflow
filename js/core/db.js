@@ -152,6 +152,10 @@ db.version(13).stores({
     teamHistory: '++id, teamId, studentId, action, timestamp'
 });
 
+db.version(14).stores({
+    enrollments: '++id, studentId, period, schoolYear, [studentId+period+schoolYear], createdAt'
+});
+
 // Open the database
 db.open().then(() => {
     console.log('Database initialized successfully');
