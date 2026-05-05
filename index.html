@@ -221,7 +221,7 @@
                   <option value="6">Period 6</option>
                   <option value="7">Period 7</option>
                   <option value="8">Period 8</option>
-                  <option value="wildcat">Wildcat</option>
+                  <option value="wildcat" data-flex-label>Wildcat</option>
               </select>
           </div>
             
@@ -268,7 +268,7 @@
                     <li class="sidebar__nav-item">
                         <a href="#teams" data-page="teams">
                             <i class="ph ph-users-three" style="font-size: 20px;"></i>
-                            <span>Groups</span>
+                            <span>Teams</span>
                         </a>
                     </li>
                     <li class="sidebar__nav-item">
@@ -430,7 +430,7 @@
 
                             <section class="dashboard__section">
                                 <h3 class="dashboard__section-title" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-sm);">
-                                    Wildcat Roster
+                                    <span data-flex-label>Wildcat</span> Roster
                                     <button id="btn-send-roster-emails" class="btn btn--primary" onclick="pages.dashboard.sendRosterNotifications()" style="font-size: 0.8em; padding: 4px 12px; display: none;">
                                         Notify Teachers
                                     </button>
@@ -446,7 +446,7 @@
                             </section>
 
                             <section class="dashboard__section">
-                                <h3 class="dashboard__section-title">Wildcat Emails</h3>
+                                <h3 class="dashboard__section-title"><span data-flex-label>Wildcat</span> Emails</h3>
                                 <div id="wildcat-tasks-list"></div>
                             </section>
 
@@ -585,7 +585,7 @@
                             <option value="6">Period 6</option>
                             <option value="7">Period 7</option>
                             <option value="8">Period 8</option>
-                            <option value="wildcat">Wildcat</option>
+                            <option value="wildcat" data-flex-label>Wildcat</option>
                         </select>
                     </div>
                     
@@ -609,8 +609,8 @@
             <!-- ==================================== -->
             <section id="page-teams" class="page teams-page hidden">
                 <header class="page-header">
-                    <h2 class="page-title">Groups</h2>
-                    <button class="btn btn--primary" onclick="modals.showAddTeam()">+ Create Group</button>
+                    <h2 class="page-title">Teams</h2>
+                    <button class="btn btn--primary" onclick="modals.showAddTeam()">+ Create Team</button>
                 </header>
                 
                 <!-- Teams Grid -->
@@ -625,7 +625,7 @@
             <section id="page-team-detail" class="page team-detail hidden">
                 <header class="page-header">
                     <button class="btn btn--secondary" onclick="router.navigate('teams')">← Back</button>
-                    <h2 class="page-title" id="team-detail-title">Group Name</h2>
+                    <h2 class="page-title" id="team-detail-title">Team Name</h2>
                     <button class="btn btn--secondary" id="edit-team-btn">Edit</button>
                 </header>
                 
@@ -1422,7 +1422,7 @@
                 
                 <!-- Step 3: Select Team -->
                 <div id="checkpoint-step-team" class="checkpoint-step hidden">
-                    <h3>Select Group</h3>
+                    <h3>Select Team</h3>
                     <div id="checkpoint-teams-list" style="margin-top: var(--space-base);"></div>
                 </div>
                 
@@ -1580,7 +1580,7 @@
                             </div>
                             
                             <div class="form-group" style="margin-bottom: var(--space-lg);">
-                                <label class="form-label">Number of Periods (excluding Wildcat):</label>
+                                <label class="form-label">Number of Periods (excluding <span data-flex-label>Wildcat</span>):</label>
                                 <select id="num-periods" class="form-select" style="width: 200px;" onchange="pages.settings.updatePeriodInputs()">
                                     <option value="6">6 Periods</option>
                                     <option value="7">7 Periods</option>
@@ -1703,12 +1703,12 @@
                                 <div style="background: #fff8e1; border: 1px solid #f59e0b; border-radius: var(--radius-md); padding: var(--space-base); margin-bottom: var(--space-lg);">
                                     <strong style="color: #92400e;">⚠️ FERPA Notice — Automations Enabled</strong>
                                     <p style="color: #92400e; font-size: var(--font-size-body-small); margin-top: var(--space-xs);">
-                                        Email automations are <strong>ON</strong>. When Wildcat attendance is saved, student name and email will be transmitted to your Google Apps Script webhook URL. This data leaves this device and is processed by your Google account. You have agreed to this. To stop data transmission, turn off Email Automations above.
+                                        Email automations are <strong>ON</strong>. When <span data-flex-label>Wildcat</span> attendance is saved, student name and email will be transmitted to your Google Apps Script webhook URL. This data leaves this device and is processed by your Google account. You have agreed to this. To stop data transmission, turn off Email Automations above.
                                     </p>
                                 </div>
 
                                 <div class="form-group">
-                                    <label class="form-label">Wildcat No-Show Notifications:</label>
+                                    <label class="form-label"><span data-flex-label>Wildcat</span> No-Show Notifications:</label>
                                     <div style="display: flex; gap: var(--space-sm);">
                                         <input type="text" id="webhook-wildcat" class="form-input" placeholder="https://script.google.com/..." style="flex: 1;">
                                         <button class="btn btn--primary" onclick="pages.settings.saveWebhook('wildcat')">Save</button>
@@ -1969,6 +1969,25 @@
                                     <option value="0">Never</option>
                                 </select>
                                 <p class="form-helper">How often to remind you to export a backup. "Never" disables the reminder.</p>
+                            </div>
+
+                            <!-- Flex Period Name (Sprint 15) -->
+                            <div class="form-group" style="margin-top: var(--space-lg); padding-top: var(--space-lg); border-top: 1px solid var(--color-border); max-width: 300px;">
+                                <label class="form-label" for="setting-flex-period-name">Flex Period Name</label>
+                                <div style="display: flex; gap: var(--space-sm);">
+                                    <input type="text" id="setting-flex-period-name" class="form-input" placeholder="Wildcat" value="Wildcat" style="flex: 1;">
+                                    <button class="btn btn--primary" onclick="pages.settings.saveFlexPeriodName()">Save</button>
+                                </div>
+                                <p class="form-helper">Your school's name for the flex/intervention period (e.g., "Wildcat", "WIN Time", "Advisory", "Flex").</p>
+                            </div>
+
+                            <!-- End of Class Steps (Sprint 15) -->
+                            <div class="form-group" style="margin-top: var(--space-lg); padding-top: var(--space-lg); border-top: 1px solid var(--color-border); max-width: 400px;">
+                                <label class="form-label">End of Class Checklist Steps</label>
+                                <p class="form-helper" style="margin-bottom: var(--space-sm);">Toggle which steps appear in the End of Class modal.</p>
+                                <div id="setting-end-class-steps" style="display: flex; flex-direction: column; gap: var(--space-xs);">
+                                    <!-- Populated dynamically -->
+                                </div>
                             </div>
 
                             <!-- Quick Action Customization (Sprint 13.3) -->
@@ -2276,13 +2295,13 @@
                     
                   <div class="form-group">
                       <div style="display: flex; justify-content: space-between; align-items: baseline;">
-                          <label class="form-label" for="student-wp-teacher">Wildcat Teacher</label>
+                          <label class="form-label" for="student-wp-teacher"><span data-flex-label>Wildcat</span> Teacher</label>
                           <button type="button" onclick="modals.showTeacherManager()" style="background: none; border: none; color: var(--color-primary); font-size: 0.85em; cursor: pointer; text-decoration: underline;">Manage Teachers</button>
                       </div>
                       <select id="student-wp-teacher" class="form-select">
                           <option value="">Select a Teacher...</option>
                           </select>
-                      <p class="form-helper">Select teacher for Wildcat email notifications</p>
+                      <p class="form-helper">Select teacher for <span data-flex-label>Wildcat</span> email notifications</p>
                   </div>
                     
                   <div class="form-group">
@@ -2313,7 +2332,7 @@
                               <input type="checkbox" class="student-period-checkbox" value="8"> Period 8
                           </label>
                           <label style="display: flex; align-items: center; gap: var(--space-xs); cursor: pointer;">
-                              <input type="checkbox" class="student-period-checkbox" value="wildcat"> Wildcat
+                              <input type="checkbox" class="student-period-checkbox" value="wildcat"> <span data-flex-label>Wildcat</span>
                           </label>
                       </div>
                   </div>
@@ -2334,13 +2353,13 @@
     <div id="modal-team" class="modal-backdrop hidden">
         <div class="modal">
             <div class="modal__header">
-                <h3 id="team-modal-title">Create Group</h3>
+                <h3 id="team-modal-title">Create Team</h3>
                 <button class="modal__close" onclick="modals.hideTeamModal()">&times;</button>
             </div>
             <div class="modal__body">
                 <form id="team-form">
                     <div class="form-group">
-                        <label class="form-label" for="team-name">Group Name *</label>
+                        <label class="form-label" for="team-name">Team Name *</label>
                         <input type="text" id="team-name" class="form-input" required placeholder="e.g., Team 1">
                     </div>
                     
@@ -2353,7 +2372,7 @@
                     </div>
                     
                     <div class="form-group">
-                        <label class="form-label">Group Members *</label>
+                        <label class="form-label">Team Members *</label>
                         <div id="team-members-list" style="max-height: 300px; overflow-y: auto; border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-sm);">
                             <!-- Student checkboxes will be populated here -->
                         </div>
@@ -2723,14 +2742,14 @@
                         <option value="6">Period 6</option>
                         <option value="7">Period 7</option>
                         <option value="8">Period 8</option>
-                        <option value="wildcat">Wildcat</option>
+                        <option value="wildcat" data-flex-label>Wildcat</option>
                     </select>
                 </div>
                 
                 <!-- Step 1: Team Station Checkout -->
-                <div class="card" style="margin-bottom: var(--space-base);">
+                <div class="card end-class-step" data-step="stationCheckout" style="margin-bottom: var(--space-base);">
                     <div class="card__header">
-                        <h4>✅ Group Station Checkout</h4>
+                        <h4>✅ Team Station Checkout</h4>
                     </div>
                     <div class="card__body">
                         <p style="margin-bottom: var(--space-base); color: var(--color-text-secondary);">Check in with each team to verify stations are clean and supplies are put away.</p>
@@ -2738,7 +2757,7 @@
                     </div>
                 </div>
                 <!-- Step 2: Return Borrowed Tools -->
-                <div class="card" style="margin-bottom: var(--space-base);">
+                <div class="card end-class-step" data-step="returnTools" style="margin-bottom: var(--space-base);">
                     <div class="card__header">
                         <h4>🔧 Return Borrowed Tools</h4>
                     </div>
@@ -2748,9 +2767,9 @@
                     </div>
                 </div>
                 <!-- Step 3: PC Restart Reminder -->
-                <div class="card" style="margin-bottom: var(--space-base);">
+                <div class="card end-class-step" data-step="pcRestart" style="margin-bottom: var(--space-base);">
                     <div class="card__header">
-                        <h4>PC Restart Reminder</h4>
+                        <h4>💻 PC Restart Reminder</h4>
                     </div>
                     <div class="card__body">
                         <p style="color: var(--color-text-secondary);">Remind students to restart their computers before leaving.</p>
@@ -2759,7 +2778,7 @@
                 </div>
 
                 <!-- Step 4: Absent Student Notifications -->
-                <div class="card" style="margin-bottom: var(--space-base);">
+                <div class="card end-class-step" data-step="absentNotifications" style="margin-bottom: var(--space-base);">
                     <div class="card__header">
                         <h4>📧 Absent Student Notifications</h4>
                     </div>
@@ -2774,20 +2793,20 @@
                     </div>
                 </div>
                 
-                <!-- Step 5: Wildcat Attendance -->
-                <div class="card">
+                <!-- Step 5: Flex Period Scheduling -->
+                <div class="card end-class-step" data-step="wildcatScheduling">
                     <div class="card__header">
-                        <h4>🐾 Next Wildcat Period</h4>
+                        <h4>🐾 Next <span data-flex-label>Wildcat</span> Period</h4>
                     </div>
                     <div class="card__body">
-                        <p style="margin-bottom: var(--space-base); color: var(--color-text-secondary);">Select students who need to attend the next Wildcat period.</p>
+                        <p style="margin-bottom: var(--space-base); color: var(--color-text-secondary);">Select students who need to attend the next <span data-flex-label>Wildcat</span> period.</p>
                         <div id="end-class-wildcat-list"></div>
-                        <button class="btn btn--primary" onclick="modals.saveWildcatAttendees()" style="margin-top: var(--space-base);">Save Wildcat List</button>
+                        <button class="btn btn--primary" onclick="modals.saveWildcatAttendees()" style="margin-top: var(--space-base);">Save <span data-flex-label>Wildcat</span> List</button>
                     </div>
                 </div>
                 
                 <!-- Step 6: Student Hub Sync -->
-                <div class="card" id="end-class-hub-sync-card" style="display: none;">
+                <div class="card end-class-step" data-step="hubSync" id="end-class-hub-sync-card" style="display: none;">
                     <div class="card__header">
                         <h4>📤 Sync to Student Hub</h4>
                     </div>
@@ -2856,11 +2875,11 @@
         </div>
     </div>
 
-    <!-- Manage Wildcat Teachers Modal -->
+    <!-- Manage Flex Period Teachers Modal -->
     <div id="modal-teachers" class="modal-backdrop hidden" style="z-index: 1000;">
         <div class="modal">
             <div class="modal__header">
-                <h3>Manage Wildcat Teachers</h3>
+                <h3>Manage <span data-flex-label>Wildcat</span> Teachers</h3>
                 <button class="modal__close" onclick="modals.hideTeacherManager()">&times;</button>
             </div>
             <div class="modal__body">
