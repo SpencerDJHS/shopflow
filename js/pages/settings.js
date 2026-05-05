@@ -23,6 +23,9 @@ pages.settings = {
         await this.loadBackupReminderDays();
         // Sprint 13.3: Load quick actions preference
         await this.loadQuickActions();
+        // Sprint 15: Load flex period name + end class steps
+        await this.loadFlexPeriodName();
+        await this.loadEndClassSteps();
     },
 
     setTab: function(tabId, btn) {
@@ -48,6 +51,8 @@ pages.settings = {
             this.loadDefaultPeriod();
             this.loadBackupReminderDays();
             this.loadQuickActions();
+            this.loadFlexPeriodName();
+            this.loadEndClassSteps();
         }
     },
 
@@ -62,7 +67,7 @@ pages.settings = {
         });
         let html = '<option value="">None (auto-detect)</option>';
         periods.forEach(p => {
-            const label = p === 'wildcat' ? 'Wildcat' : `Period ${p}`;
+            const label = p === 'wildcat' ? state.flexPeriodName : `Period ${p}`;
             html += `<option value="${escapeHtml(p)}">${label}</option>`;
         });
         select.innerHTML = html;
@@ -145,6 +150,76 @@ pages.settings = {
         await db.settings.put({ key: 'dashboard-quick-actions', value: config });
         driveSync.markDirty();
         this.loadQuickActions();
+    },
+
+    // --- Flex Period Name (Sprint 15) ---
+    loadFlexPeriodName: async function() {
+        const input = document.getElementById('setting-flex-period-name');
+        if (!input) return;
+        const setting = await db.settings.get('flex-period-name');
+        input.value = setting?.value || 'Wildcat';
+    },
+
+    saveFlexPeriodName: async function() {
+        const input = document.getElementById('setting-flex-period-name');
+        const value = input.value.trim() || 'Wildcat';
+        await db.settings.put({ key: 'flex-period-name', value: value });
+        state.flexPeriodName = value;
+        // Update all display labels throughout the app
+        document.querySelectorAll('[data-flex-label]').forEach(el => {
+            el.textContent = value;
+        });
+        driveSync.markDirty();
+        logAction('update', 'settings', null, 'Flex period name set to: ' + value);
+        ui.showToast('Flex period name saved', 'success');
+    },
+
+    // --- End Class Steps (Sprint 15) ---
+    loadEndClassSteps: async function() {
+        const container = document.getElementById('setting-end-class-steps');
+        if (!container) return;
+        const setting = await db.settings.get('end-class-steps');
+        const steps = setting?.value || {
+            stationCheckout: true,
+            returnTools: true,
+            pcRestart: true,
+            absentNotifications: true,
+            wildcatScheduling: true,
+            hubSync: true
+        };
+
+        const stepLabels = {
+            stationCheckout: 'Team Station Checkout',
+            returnTools: 'Return Borrowed Tools',
+            pcRestart: 'PC Restart Reminder',
+            absentNotifications: 'Absent Student Notifications',
+            wildcatScheduling: state.flexPeriodName + ' Period Scheduling',
+            hubSync: 'Sync to Student Hub'
+        };
+
+        container.innerHTML = Object.entries(stepLabels).map(([key, label]) => `
+            <label style="display: flex; align-items: center; gap: var(--space-sm); cursor: pointer; padding: var(--space-xs) 0;">
+                <input type="checkbox" ${steps[key] !== false ? 'checked' : ''} onchange="pages.settings.toggleEndClassStep('${key}', this.checked)">
+                <span>${escapeHtml(label)}</span>
+            </label>
+        `).join('');
+    },
+
+    toggleEndClassStep: async function(stepKey, enabled) {
+        const setting = await db.settings.get('end-class-steps');
+        const steps = setting?.value || {
+            stationCheckout: true,
+            returnTools: true,
+            pcRestart: true,
+            absentNotifications: true,
+            wildcatScheduling: true,
+            hubSync: true
+        };
+        steps[stepKey] = enabled;
+        await db.settings.put({ key: 'end-class-steps', value: steps });
+        driveSync.markDirty();
+        logAction('update', 'settings', null, `End class step "${stepKey}" ${enabled ? 'enabled' : 'disabled'}`);
+        ui.showToast('End of class steps updated', 'success');
     },
 
     initDriveSyncToggle: function() {
@@ -237,7 +312,7 @@ pages.settings = {
             }
 
             if (deletedTeams.length > 0) {
-                html += '<h4 style="margin: var(--space-base) 0 var(--space-sm);">Groups</h4>';
+                html += '<h4 style="margin: var(--space-base) 0 var(--space-sm);">Teams</h4>';
                 deletedTeams.forEach(t => {
                     html += `<div style="display: flex; justify-content: space-between; align-items: center; padding: var(--space-sm); border: 1px solid var(--color-border); border-radius: var(--radius-md); margin-bottom: var(--space-xs);">
                         <div>
@@ -2128,7 +2203,7 @@ pages.settings = {
             const wildcatPeriod = currentSchedule['wildcat'] || { start: '', end: '' };
             html += `
                 <div class="form-group">
-                    <label class="form-label">Wildcat Period</label>
+                    <label class="form-label">${escapeHtml(state.flexPeriodName)} Period</label>
                     <div style="display: flex; gap: var(--space-xs); align-items: center;">
                         <input type="time" id="period-wildcat-start-${schedule}" class="form-input" value="${wildcatPeriod.start}" placeholder="Start" style="flex: 1;" ${disabled}>
                         <span>to</span>
