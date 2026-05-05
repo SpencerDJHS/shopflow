@@ -20,6 +20,35 @@ async function getActiveSchoolYear() {
     return `${year}-${year + 1}`;
 }
 
+async function ensureEnrollment(studentId, period, schoolYear) {
+    try {
+        const existing = await db.enrollments
+            .where('[studentId+period+schoolYear]')
+            .equals([studentId, period, schoolYear])
+            .first();
+        if (!existing) {
+            await db.enrollments.add({
+                studentId, period, schoolYear, createdAt: new Date().toISOString()
+            });
+        }
+    } catch (err) {
+        console.warn('ensureEnrollment index lookup failed, using fallback scan:', err.message);
+        // Fallback: manual scan if compound index query fails due to type mismatch
+        const all = await db.enrollments
+            .where('studentId').equals(studentId)
+            .toArray();
+        const match = all.find(e =>
+            String(e.period) === String(period) &&
+            String(e.schoolYear) === String(schoolYear)
+        );
+        if (!match) {
+            await db.enrollments.add({
+                studentId, period, schoolYear, createdAt: new Date().toISOString()
+            });
+        }
+    }
+}
+
 const utils = {
     // Timestamp helper
     timestamp: function() {
