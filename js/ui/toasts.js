@@ -68,11 +68,28 @@ const ui = {
     },
     
     showModal: function(modalId) {
-        document.getElementById(modalId).classList.remove('hidden');
+        const modal = document.getElementById(modalId);
+        modal._previousFocus = document.activeElement;
+        modal.classList.remove('hidden');
+
+        // Move focus to first focusable element inside the modal
+        const focusable = modal.querySelectorAll(
+            'button, [href], input:not([type="hidden"]), select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusable.length > 0) {
+            setTimeout(() => focusable[0].focus(), 50);
+        }
     },
-    
+
     hideModal: function(modalId) {
-        document.getElementById(modalId).classList.add('hidden');
+        const modal = document.getElementById(modalId);
+        modal.classList.add('hidden');
+
+        // Return focus to the element that triggered the modal
+        if (modal._previousFocus) {
+            modal._previousFocus.focus();
+            modal._previousFocus = null;
+        }
     },
     
     formatDate: function(date) {
