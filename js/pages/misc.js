@@ -456,138 +456,20 @@ pages.tasks = {
     },
     
     createTaskCard: function(task) {
-        const card = document.createElement('div');
-        const dueDate = task.dueDate ? new Date(task.dueDate) : null;
-        const isOverdue = dueDate && dueDate < new Date() && !task.completed;
-        const isAbsenceFollowUp = task.subtype === 'absence-followup';
-        
-        const priorityColors = {
-            high: 'var(--color-error)',
-            medium: 'var(--color-warning)',
-            low: 'var(--color-text-secondary)'
-        };
-        
-        const priorityLabels = {
-            high: 'High',
-            medium: 'Medium',
-            low: 'Low'
+        const refreshAll = () => {
+            pages.tasks.loadTasks();
+            if (!document.getElementById('page-dashboard').classList.contains('hidden')) {
+                pages.dashboard.loadTasks();
+            }
         };
 
-        let borderStyle = '';
-        if (isOverdue) {
-            borderStyle = 'border-left: 4px solid var(--color-error); background: rgba(220, 38, 38, 0.05);';
-        } else if (isAbsenceFollowUp) {
-            borderStyle = 'border-left: 4px solid var(--color-warning);';
-        }
-        
-        card.className = 'card';
-        card.dataset.taskId = String(task.id);
-        card.style.cssText = `
-            ${borderStyle}
-            ${task.completed ? 'opacity: 0.6;' : ''}
-            margin-bottom: var(--space-sm);
-        `;
-
-        const absenceBadge = isAbsenceFollowUp && task.absenceDates && task.absenceDates.length > 1
-            ? `<span style="display:inline-block; background: var(--color-warning); color: white; border-radius: 999px; padding: 0 8px; font-size: 12px; font-weight: 600;">${task.absenceDates.length} days absent</span>`
-            : isAbsenceFollowUp ? '<span style="display:inline-block; background: var(--color-warning); color: white; border-radius: 999px; padding: 0 8px; font-size: 12px; font-weight: 600;">Absent</span>' : '';
-
-        const followUpNote = isAbsenceFollowUp && !task.completed && !dueDate
-            ? '<div style="font-size: var(--font-size-body-small); color: var(--color-text-secondary); margin-top: 2px;">Follow up when student returns</div>'
-            : '';
-        
-        // Show snoozed status if applicable
-        const snoozedNote = task.status === 'snoozed' && task.dueDate
-            ? `<div style="font-size: var(--font-size-body-small); color: var(--color-info); font-style: italic; margin-top: 2px;">Snoozed to ${new Date(task.dueDate).toLocaleDateString()}</div>`
-            : '';
-
-        card.innerHTML = `
-            <div class="card__body" style="display: flex; align-items: start; gap: var(--space-base);">
-                <input type="checkbox" 
-                    ${task.completed ? 'checked' : ''} 
-                    onchange="pages.tasks.toggleComplete(${task.id})" 
-                    style="margin-top: 4px; cursor: pointer; width: 20px; height: 20px;">
-                
-                <div style="flex: 1;">
-                    <div style="font-weight: 500; font-size: var(--font-size-body-large); ${task.completed ? 'text-decoration: line-through;' : ''} ${task.status === 'snoozed' ? 'color: var(--color-text-secondary); font-style: italic;' : ''}">
-                        ${isAbsenceFollowUp ? '🏠 ' : ''}${escapeHtml(task.description)} ${absenceBadge}
-                    </div>
-                    ${followUpNote}
-                    ${snoozedNote}
-                    
-                    <div style="display: flex; gap: var(--space-base); margin-top: var(--space-xs); font-size: var(--font-size-body-small); color: var(--color-text-secondary);">
-                        ${dueDate && task.status !== 'snoozed' ? `
-                            <span style="color: ${isOverdue ? 'var(--color-error)' : 'var(--color-text-secondary)'};">
-                                ${dueDate.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-                            </span>
-                        ` : ''}
-                        
-                        <span style="display: flex; align-items: center; gap: 4px;">
-                            <span style="width: 8px; height: 8px; border-radius: 50%; background: ${escapeHtml(priorityColors[task.priority])};"></span>
-                            ${escapeHtml(priorityLabels[task.priority])} Priority
-                        </span>
-                        
-                        ${task.completed ? `
-                            <span>✓ Completed ${new Date(task.completedAt).toLocaleDateString()}</span>
-                        ` : ''}
-                    </div>
-                </div>
-                
-                <button class="btn btn--danger" style="padding: var(--space-xs) var(--space-sm);" onclick="pages.tasks.deleteTask(${task.id})">
-                    Delete
-                </button>
-            </div>
-        `;
-
-        // Attach swipe gestures — only on non-completed tasks
-        if (!task.completed) {
-            gestures.makeSwipeable(card, {
-                onSwipeRight: () => {
-                    if (task.type === 'auto' && task.autoKey) {
-                    db.settings.get('dismissed-auto-tasks').then(setting => {
-                        const dismissed = setting ? setting.value : [];
-                        dismissed.push(task.autoKey);
-                        db.settings.put({ key: 'dismissed-auto-tasks', value: dismissed });
-                    });
-                }
-                    db.tasks.update(task.id, {
-                        completed: true,
-                        status: 'completed',
-                        completedAt: new Date().toISOString(),
-                        updatedAt: new Date().toISOString()
-                    }).then(() => {
-                        logAction('task-complete', 'task', task.id, task.description);
-                        if (typeof driveSync !== 'undefined') driveSync.markDirty();
-                        ui.showUndoToast('Task completed!', () => {
-                            db.tasks.update(task.id, {
-                                completed: false,
-                                status: 'pending',
-                                completedAt: null,
-                                updatedAt: new Date().toISOString()
-                            }).then(() => {
-                                if (typeof driveSync !== 'undefined') driveSync.markDirty();
-                                pages.tasks.loadTasks();
-                            });
-                        });
-                        pages.tasks.loadTasks();
-                        // Also refresh dashboard
-                        if (!document.getElementById('page-dashboard').classList.contains('hidden')) {
-                            pages.dashboard.loadTasks();
-                        }
-                    });
-                },
-                onSwipeLeft: () => {
-                    pages.tasks.showSnoozeUI(task.id, card);
-                },
-                rightColor: 'var(--color-success)',
-                leftColor: 'var(--color-info)',
-                rightIcon: '✓',
-                leftIcon: '📅',
-                ignoreSelector: 'input[type="checkbox"], .btn--danger'
-            });
-        }
-        
-        return card;
+        return renderTaskCard(task, {
+            compact: false,
+            showDelete: true,
+            onComplete: (id) => this.toggleComplete(id),
+            onDelete: (id) => this.deleteTask(id),
+            refreshAll: refreshAll
+        });
     },
     
     toggleComplete: async function(taskId) {
