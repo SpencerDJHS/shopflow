@@ -55,6 +55,29 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
+    // Trap Tab key inside open modals (WCAG focus management)
+    document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Tab') return;
+        const openModal = document.querySelector('.modal-backdrop:not(.hidden)');
+        if (!openModal) return;
+
+        const focusable = openModal.querySelectorAll(
+            'button:not([disabled]), [href], input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusable.length === 0) return;
+
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+        }
+    });
+
     // Quick action buttons
     document.querySelectorAll('[data-action]').forEach(btn => {
         btn.addEventListener('click', (e) => {
