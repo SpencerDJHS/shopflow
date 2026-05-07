@@ -536,7 +536,7 @@ pages.settings = {
         document.getElementById('class-color').value = '#3b82f6';
         document.getElementById('delete-class-btn').style.display = 'none';
         await this.renderClassPeriodCheckboxes([]);
-        document.getElementById('modal-class').classList.remove('hidden');
+        ui.showModal('modal-class');
     },
 
     showEditClassModal: async function(id) {
@@ -547,7 +547,7 @@ pages.settings = {
         document.getElementById('class-name').value = cls.name;
         document.getElementById('class-color').value = cls.color;
         await this.renderClassPeriodCheckboxes(cls.periods || []);
-        document.getElementById('modal-class').classList.remove('hidden');
+        ui.showModal('modal-class');
     },
 
     renderClassPeriodCheckboxes: async function(selectedPeriods) {
@@ -573,7 +573,7 @@ pages.settings = {
     },
 
     hideClassModal: function() {
-        document.getElementById('modal-class').classList.add('hidden');
+        ui.hideModal('modal-class');
         state.editingClassId = null;
     },
 
@@ -1803,7 +1803,7 @@ pages.settings = {
         document.getElementById('non-instructional-modal-title').textContent = 'Add Non-Instructional Day';
         document.getElementById('non-instructional-form').reset();
         document.getElementById('delete-non-instructional-btn').style.display = 'none';
-        document.getElementById('modal-non-instructional-day').classList.remove('hidden');
+        ui.showModal('modal-non-instructional-day');
     },
 
     editNonInstructionalDay: async function(index) {
@@ -1820,7 +1820,7 @@ pages.settings = {
             document.getElementById('non-instructional-start').value = day.start;
             document.getElementById('non-instructional-end').value = day.end || '';
             
-            document.getElementById('modal-non-instructional-day').classList.remove('hidden');
+            ui.showModal('modal-non-instructional-day');
         } catch (error) {
             console.error('Error loading day:', error);
             ui.showToast('Failed to load day', 'error');
@@ -1828,7 +1828,7 @@ pages.settings = {
     },
 
     hideNonInstructionalDayModal: function() {
-        document.getElementById('modal-non-instructional-day').classList.add('hidden');
+        ui.hideModal('modal-non-instructional-day');
         document.getElementById('non-instructional-form').reset();
         state.editingNonInstructionalIndex = null;
     },
