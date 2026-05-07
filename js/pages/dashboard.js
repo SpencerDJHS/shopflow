@@ -118,34 +118,17 @@ pages.dashboard = {
         console.error('Dashboard Stats Error:', error);
     }
 
-    // Load active schedule and update period indicator
-    await this.loadActiveSchedule();
-    
-    // Load station issues
+    // Fire all independent sections concurrently
+    this.loadActiveSchedule();
     this.loadStationIssues();
-
-    // Process Wildcat schedule for today
-    await this.processWildcatSchedule();
-
-    // Load Wildcat no-shows
-    this.loadWildcatRoster();
-
-    // Load Wildcat email tasks
-    this.loadWildcatTasks();
-
-    // Generate auto-tasks, then load all tasks
+    this.processWildcatSchedule().then(() => {
+        this.loadWildcatRoster();
+        this.loadWildcatTasks();
+    });
     autoTasks.generate().then(() => this.loadTasks());
-
-    // Load active assignments progress widget
     this.loadActiveAssignments();
-
-    // Start scheduled auto-check timer
     this.startAutoCheckTimer();
-
-    // Refresh live alerts board
     alertsEngine.refresh().then(() => this.loadAlerts());
-
-    // Load today's events
     this.loadTodaysEvents();
     },
 
@@ -1399,7 +1382,7 @@ loadTasks: async function() {
             details.innerHTML = `<summary>🏠 Absence Follow-Ups <span class="action-accordion__count action-accordion__count--warning">${absenceFollowUps.length}</span></summary>`;
             const content = document.createElement('div');
             absenceFollowUps.forEach(task => {
-                content.appendChild(this.renderTaskRow(task, true));
+                content.appendChild(this.renderTaskRow(task));
             });
             details.appendChild(content);
             container.appendChild(details);
@@ -1412,7 +1395,7 @@ loadTasks: async function() {
             details.innerHTML = `<summary>⚡ Auto-Generated <span class="action-accordion__count">${otherAutoTasks.length}</span></summary>`;
             const content = document.createElement('div');
             otherAutoTasks.forEach(task => {
-                content.appendChild(this.renderTaskRow(task, true));
+                content.appendChild(this.renderTaskRow(task));
             });
             details.appendChild(content);
             container.appendChild(details);
@@ -1424,92 +1407,14 @@ loadTasks: async function() {
     }
 },
 
-renderTaskRow: function(task, isAuto = false) {
-    const dueDate = task.dueDate ? new Date(task.dueDate) : null;
-    const isOverdue = dueDate && dueDate < new Date();
-    const isAbsenceFollowUp = task.subtype === 'absence-followup';
-    
-    const priorityColors = {
-        high: 'var(--color-error)',
-        medium: 'var(--color-warning)',
-        low: 'var(--color-text-secondary)'
-    };
-
-    // Absence follow-ups get a distinct orange-left border
-    let borderLeft = '';
-    if (isAbsenceFollowUp) {
-        borderLeft = 'border-left: 3px solid var(--color-warning);';
-    } else if (isAuto) {
-        borderLeft = 'border-left: 3px solid var(--color-info);';
-    }
-    
-    const div = document.createElement('div');
-    div.className = 'dashboard-task-row';
-    div.style.cssText = `display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-sm); border: 1px solid var(--color-border); border-radius: var(--radius-md); margin-bottom: var(--space-xs); ${isOverdue ? 'background: rgba(220, 38, 38, 0.05); border-color: var(--color-error);' : ''} ${borderLeft}`;
-    div.dataset.taskId = String(task.id);
-
-    // Build the label prefix for absence follow-ups
-    const labelPrefix = isAbsenceFollowUp ? '🏠 ' : '';
-    const daysLabel = isAbsenceFollowUp && task.absenceDates && task.absenceDates.length > 1
-        ? `<span style="display:inline-block; background: var(--color-warning); color: white; border-radius: 999px; padding: 0 6px; font-size: 11px; font-weight: 600; margin-left: 4px;">${task.absenceDates.length} days</span>`
-        : '';
-    
-    div.innerHTML = `
-        <input type="checkbox" onchange="pages.dashboard.completeTask(${task.id})" style="cursor: pointer; min-width: 20px;">
-        <div style="flex: 1; min-width: 0; cursor: ${task.linkedEntityType ? 'pointer' : 'default'};" onclick="if(this.closest('[data-task-id]')._gestureState && this.closest('[data-task-id]')._gestureState.swipeOccurred) return; pages.dashboard.navigateToTask(${task.id})">
-            <div style="font-weight: 500; ${isAuto ? 'font-size: var(--font-size-body-small);' : ''}">${labelPrefix}${escapeHtml(task.description)}${daysLabel}</div>
-            ${dueDate ? `<div style="font-size: 0.8em; color: ${isOverdue ? 'var(--color-error)' : 'var(--color-text-tertiary)'};">Due: ${escapeHtml(dueDate.toLocaleDateString())}</div>` : ''}
-            ${isAbsenceFollowUp && !dueDate ? '<div style="font-size: 0.8em; color: var(--color-text-tertiary);">Follow up when student returns</div>' : ''}
-        </div>
-        <span style="width: 8px; height: 8px; border-radius: 50%; background: ${priorityColors[task.priority] || priorityColors.medium}; flex-shrink: 0;"></span>
-    `;
-
-    // Attach swipe gestures (touch only)
-    if (!task.completed) {
-        gestures.makeSwipeable(div, {
-            onSwipeRight: () => {
-                // Track auto-task dismissal
-                if (task.type === 'auto' && task.autoKey) {
-                    db.settings.get('dismissed-auto-tasks').then(setting => {
-                        const dismissed = setting ? setting.value : [];
-                        dismissed.push(task.autoKey);
-                        db.settings.put({ key: 'dismissed-auto-tasks', value: dismissed });
-                    });
-                }
-                db.tasks.update(task.id, {
-                    completed: true,
-                    status: 'completed',
-                    completedAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString()
-                }).then(() => {
-                    logAction('task-complete', 'task', task.id, task.description);
-                    if (typeof driveSync !== 'undefined') driveSync.markDirty();
-                    ui.showUndoToast('Task completed!', () => {
-                        db.tasks.update(task.id, {
-                            completed: false,
-                            status: 'pending',
-                            completedAt: null,
-                            updatedAt: new Date().toISOString()
-                        }).then(() => {
-                            if (typeof driveSync !== 'undefined') driveSync.markDirty();
-                            pages.dashboard.loadTasks();
-                        });
-                    });
-                    pages.dashboard.loadTasks();
-                });
-            },
-            onSwipeLeft: () => {
-                pages.tasks.showSnoozeUI(task.id, div);
-            },
-            rightColor: 'var(--color-success)',
-            leftColor: 'var(--color-info)',
-            rightIcon: '✓',
-            leftIcon: '📅',
-            ignoreSelector: 'input[type="checkbox"]'
-        });
-    }
-    
-    return div;
+renderTaskRow: function(task) {
+    return renderTaskCard(task, {
+        compact: true,
+        showDelete: false,
+        onComplete: (id) => this.completeTask(id),
+        onNavigate: (id) => this.navigateToTask(id),
+        refreshAll: () => pages.dashboard.loadTasks()
+    });
 },
 
 completeTask: async function(taskId) {
@@ -1545,6 +1450,7 @@ navigateToTask: async function(taskId) {
         } else if (task.linkedEntityType === 'student' && task.linkedEntityId) {
             state.selectedStudent = task.linkedEntityId;
             router.navigate('student-detail');
+            pages.studentDetail.render(task.linkedEntityId);
         } else if (task.linkedEntityType === 'inventory' && task.linkedEntityId) {
             router.navigate('inventory');
         } else if (task.linkedEntityType === 'team' && task.linkedEntityId) {
