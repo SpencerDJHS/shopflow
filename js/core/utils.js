@@ -346,3 +346,205 @@ function periodLabel(periodValue) {
     if (periodValue === 'wildcat') return state.flexPeriodName;
     return `Period ${periodValue}`;
 }
+
+// ============================================
+// SHARED TASK CARD RENDERER
+// ============================================
+// Used by both dashboard.js and misc.js (Tasks page).
+// Options:
+//   compact:    true = dashboard row style, false = full card style (default false)
+//   showDelete: true = show delete button (default false)
+//   onComplete: function(taskId) — called when checkbox changes
+//   onDelete:   function(taskId) — called when delete button clicked
+//   onNavigate: function(taskId) — called when task body is tapped
+//   refreshAll: function()       — called after swipe-complete or undo to refresh lists
+
+function renderTaskCard(task, options = {}) {
+    const {
+        compact = false,
+        showDelete = false,
+        onComplete = null,
+        onDelete = null,
+        onNavigate = null,
+        refreshAll = null
+    } = options;
+
+    const dueDate = task.dueDate ? new Date(task.dueDate) : null;
+    const isOverdue = dueDate && dueDate < new Date() && !task.completed;
+    const isAbsenceFollowUp = task.subtype === 'absence-followup';
+    const isAuto = task.type === 'auto';
+
+    const priorityColors = {
+        high: 'var(--color-error)',
+        medium: 'var(--color-warning)',
+        low: 'var(--color-text-secondary)'
+    };
+
+    const priorityLabels = {
+        high: 'High',
+        medium: 'Medium',
+        low: 'Low'
+    };
+
+    // --- Border / background styling ---
+    let borderStyle = '';
+    if (compact) {
+        // Dashboard compact style: thin left border
+        if (isAbsenceFollowUp) {
+            borderStyle = 'border-left: 3px solid var(--color-warning);';
+        } else if (isAuto) {
+            borderStyle = 'border-left: 3px solid var(--color-info);';
+        }
+    } else {
+        // Full card style: thicker left border
+        if (isOverdue) {
+            borderStyle = 'border-left: 4px solid var(--color-error); background: rgba(220, 38, 38, 0.05);';
+        } else if (isAbsenceFollowUp) {
+            borderStyle = 'border-left: 4px solid var(--color-warning);';
+        }
+    }
+
+    const el = document.createElement('div');
+    el.dataset.taskId = String(task.id);
+
+    // --- Absence badge ---
+    const absenceBadge = isAbsenceFollowUp && task.absenceDates && task.absenceDates.length > 1
+        ? `<span style="display:inline-block; background: var(--color-warning); color: white; border-radius: 999px; padding: 0 ${compact ? '6px' : '8px'}; font-size: ${compact ? '11px' : '12px'}; font-weight: 600; margin-left: 4px;">${task.absenceDates.length} days${compact ? '' : ' absent'}</span>`
+        : (isAbsenceFollowUp && !compact)
+            ? '<span style="display:inline-block; background: var(--color-warning); color: white; border-radius: 999px; padding: 0 8px; font-size: 12px; font-weight: 600;">Absent</span>'
+            : '';
+
+    const labelPrefix = isAbsenceFollowUp ? '🏠 ' : '';
+
+    if (compact) {
+        // ── Dashboard compact row ──
+        el.className = 'dashboard-task-row';
+        el.style.cssText = `display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-sm); border: 1px solid var(--color-border); border-radius: var(--radius-md); margin-bottom: var(--space-xs); ${isOverdue ? 'background: rgba(220, 38, 38, 0.05); border-color: var(--color-error);' : ''} ${borderStyle}`;
+
+        el.innerHTML = `
+            <input type="checkbox" data-task-complete="${task.id}" style="cursor: pointer; min-width: 20px;">
+            <div style="flex: 1; min-width: 0; cursor: ${task.linkedEntityType ? 'pointer' : 'default'};" data-task-navigate="${task.id}">
+                <div style="font-weight: 500; ${isAuto ? 'font-size: var(--font-size-body-small);' : ''}">${labelPrefix}${escapeHtml(task.description)}${absenceBadge}</div>
+                ${dueDate ? `<div style="font-size: 0.8em; color: ${isOverdue ? 'var(--color-error)' : 'var(--color-text-tertiary)'};">Due: ${escapeHtml(dueDate.toLocaleDateString())}</div>` : ''}
+                ${isAbsenceFollowUp && !dueDate ? '<div style="font-size: 0.8em; color: var(--color-text-tertiary);">Follow up when student returns</div>' : ''}
+            </div>
+            <span style="width: 8px; height: 8px; border-radius: 50%; background: ${priorityColors[task.priority] || priorityColors.medium}; flex-shrink: 0;"></span>
+        `;
+    } else {
+        // ── Tasks page full card ──
+        const followUpNote = isAbsenceFollowUp && !task.completed && !dueDate
+            ? '<div style="font-size: var(--font-size-body-small); color: var(--color-text-secondary); margin-top: 2px;">Follow up when student returns</div>'
+            : '';
+
+        const snoozedNote = task.status === 'snoozed' && task.dueDate
+            ? `<div style="font-size: var(--font-size-body-small); color: var(--color-info); font-style: italic; margin-top: 2px;">Snoozed to ${new Date(task.dueDate).toLocaleDateString()}</div>`
+            : '';
+
+        el.className = 'card';
+        el.style.cssText = `${borderStyle} ${task.completed ? 'opacity: 0.6;' : ''} margin-bottom: var(--space-sm);`;
+
+        el.innerHTML = `
+            <div class="card__body" style="display: flex; align-items: start; gap: var(--space-base);">
+                <input type="checkbox"
+                    ${task.completed ? 'checked' : ''}
+                    data-task-complete="${task.id}"
+                    style="margin-top: 4px; cursor: pointer; width: 20px; height: 20px;">
+
+                <div style="flex: 1;">
+                    <div style="font-weight: 500; font-size: var(--font-size-body-large); ${task.completed ? 'text-decoration: line-through;' : ''} ${task.status === 'snoozed' ? 'color: var(--color-text-secondary); font-style: italic;' : ''}">
+                        ${labelPrefix}${escapeHtml(task.description)} ${absenceBadge}
+                    </div>
+                    ${followUpNote}
+                    ${snoozedNote}
+
+                    <div style="display: flex; gap: var(--space-base); margin-top: var(--space-xs); font-size: var(--font-size-body-small); color: var(--color-text-secondary);">
+                        ${dueDate && task.status !== 'snoozed' ? `
+                            <span style="color: ${isOverdue ? 'var(--color-error)' : 'var(--color-text-secondary)'};">
+                                ${dueDate.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                            </span>
+                        ` : ''}
+
+                        <span style="display: flex; align-items: center; gap: 4px;">
+                            <span style="width: 8px; height: 8px; border-radius: 50%; background: ${escapeHtml(priorityColors[task.priority])};"></span>
+                            ${escapeHtml(priorityLabels[task.priority])} Priority
+                        </span>
+
+                        ${task.completed ? `
+                            <span>✓ Completed ${new Date(task.completedAt).toLocaleDateString()}</span>
+                        ` : ''}
+                    </div>
+                </div>
+
+                ${showDelete ? `<button class="btn btn--danger" style="padding: var(--space-xs) var(--space-sm);" data-task-delete="${task.id}">Delete</button>` : ''}
+            </div>
+        `;
+    }
+
+    // --- Wire up callbacks via event delegation on this element ---
+    const checkbox = el.querySelector('[data-task-complete]');
+    if (checkbox && onComplete) {
+        checkbox.addEventListener('change', () => onComplete(task.id));
+    }
+
+    const navTarget = el.querySelector('[data-task-navigate]');
+    if (navTarget && onNavigate) {
+        navTarget.addEventListener('click', () => {
+            if (el._gestureState && el._gestureState.swipeOccurred) return;
+            onNavigate(task.id);
+        });
+    }
+
+    const deleteBtn = el.querySelector('[data-task-delete]');
+    if (deleteBtn && onDelete) {
+        deleteBtn.addEventListener('click', () => onDelete(task.id));
+    }
+
+    // --- Swipe gestures (touch only, non-completed tasks) ---
+    if (!task.completed) {
+        gestures.makeSwipeable(el, {
+            onSwipeRight: () => {
+                // Auto-task dismissal tracking
+                if (task.type === 'auto' && task.autoKey) {
+                    db.settings.get('dismissed-auto-tasks').then(setting => {
+                        const dismissed = setting ? setting.value : [];
+                        dismissed.push(task.autoKey);
+                        db.settings.put({ key: 'dismissed-auto-tasks', value: dismissed });
+                    });
+                }
+                db.tasks.update(task.id, {
+                    completed: true,
+                    status: 'completed',
+                    completedAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                }).then(() => {
+                    logAction('task-complete', 'task', task.id, task.description);
+                    if (typeof driveSync !== 'undefined') driveSync.markDirty();
+                    ui.showUndoToast('Task completed!', () => {
+                        db.tasks.update(task.id, {
+                            completed: false,
+                            status: 'pending',
+                            completedAt: null,
+                            updatedAt: new Date().toISOString()
+                        }).then(() => {
+                            if (typeof driveSync !== 'undefined') driveSync.markDirty();
+                            if (refreshAll) refreshAll();
+                        });
+                    });
+                    if (refreshAll) refreshAll();
+                });
+            },
+            onSwipeLeft: () => {
+                pages.tasks.showSnoozeUI(task.id, el);
+            },
+            rightColor: 'var(--color-success)',
+            leftColor: 'var(--color-info)',
+            rightIcon: '✓',
+            leftIcon: '📅',
+            ignoreSelector: compact
+                ? 'input[type="checkbox"]'
+                : 'input[type="checkbox"], .btn--danger'
+        });
+    }
+
+    return el;
+}
