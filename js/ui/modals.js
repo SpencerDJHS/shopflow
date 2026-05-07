@@ -35,7 +35,7 @@ const modals = {
             classSelect.appendChild(option);
         });
 
-        document.getElementById('modal-student').classList.remove('hidden');
+        ui.showModal('modal-student');
     },
     
     showEditStudent: async function(studentId) {
@@ -129,7 +129,7 @@ const modals = {
                 }
 
                 // Show the modal
-                document.getElementById('modal-student').classList.remove('hidden');
+                ui.showModal('modal-student');
             }
         } catch (error) {
             console.error('Error loading student:', error);
@@ -138,7 +138,7 @@ const modals = {
     },
     
     hideStudentModal: function() {
-        document.getElementById('modal-student').classList.add('hidden');
+        ui.hideModal('modal-student');
         document.getElementById('student-form').reset();
         state.editingStudentId = null;
     },
@@ -240,12 +240,12 @@ const modals = {
 
     //Teacher Manager Logic
     showTeacherManager: async function() {
-        document.getElementById('modal-teachers').classList.remove('hidden');
+        ui.showModal('modal-teachers');
         await this.renderTeacherList();
     },
 
     hideTeacherManager: async function() {
-        document.getElementById('modal-teachers').classList.add('hidden');
+        ui.hideModal('modal-teachers');
         document.getElementById('new-teacher-name').value = '';
         document.getElementById('new-teacher-email').value = '';
         
@@ -336,7 +336,7 @@ const modals = {
         document.getElementById('team-modal-title').textContent = 'Create Team';
         document.getElementById('team-form').reset();
         document.getElementById('team-members-list').innerHTML = '';
-        document.getElementById('modal-team').classList.remove('hidden');
+        ui.showModal('modal-team');
         // Populate class dropdown
         const classSelect = document.getElementById('team-class-id');
         classSelect.innerHTML = '<option value="">Select Class...</option>';
@@ -382,7 +382,7 @@ const modals = {
                     if (checkbox) checkbox.checked = true;
                 });
                 
-                document.getElementById('modal-team').classList.remove('hidden');
+                ui.showModal('modal-team');
             }
         } catch (error) {
             console.error('Error loading team:', error);
@@ -391,7 +391,7 @@ const modals = {
     },
 
     hideTeamModal: function() {
-        document.getElementById('modal-team').classList.add('hidden');
+        ui.hideModal('modal-team');
         document.getElementById('team-form').reset();
         state.editingTeamId = null;
     },
@@ -662,7 +662,7 @@ const modals = {
         document.getElementById('cp-weight-display').textContent = '0%';
         document.querySelectorAll('input[name="cp-grade-mode"]').forEach(function(r) { r.checked = (r.value === 'completion'); });
         document.getElementById('checkpoint-grading-section').style.display = 'none';
-        document.getElementById('modal-activity').classList.remove('hidden');
+        ui.showModal('modal-activity');
         this.addCheckpointField();
     },
 
@@ -681,11 +681,11 @@ const modals = {
         // Total Points is always visible regardless of scoring type
         document.getElementById('qe-points-group').style.display = '';
 
-        document.getElementById('modal-quick-edit').classList.remove('hidden');
+        ui.showModal('modal-quick-edit');
     },
 
     hideQuickEdit: function() {
-        document.getElementById('modal-quick-edit').classList.add('hidden');
+        ui.hideModal('modal-quick-edit');
         state._quickEditActivityId = null;
     },
 
@@ -860,7 +860,7 @@ const modals = {
                     });
                 }
 
-                document.getElementById('modal-activity').classList.remove('hidden');
+                ui.showModal('modal-activity');
             }
         } catch (error) {
             console.error('Error loading activity:', error);
@@ -1169,7 +1169,7 @@ const modals = {
     },
 
     hideActivityModal: function() {
-        document.getElementById('modal-activity').classList.add('hidden');
+        ui.hideModal('modal-activity');
         document.getElementById('activity-form').reset();
         state.editingActivityId = null;
     },
@@ -1529,7 +1529,7 @@ const modals = {
             }
         });
 
-        document.getElementById('modal-end-class').classList.remove('hidden');
+        ui.showModal('modal-end-class');
         
         // Auto-select current period
         const period = state.currentPeriod;
@@ -1837,7 +1837,7 @@ const modals = {
     },
 
     hideEndClassModal: function() {
-        document.getElementById('modal-end-class').classList.add('hidden');
+        ui.hideModal('modal-end-class');
         document.getElementById('end-class-period').value = '';
         document.getElementById('end-class-teams-list').innerHTML = '';
         document.getElementById('end-class-absent-list').innerHTML = '';
@@ -2422,7 +2422,7 @@ const modals = {
         state.editingInventoryId = null;
         document.getElementById('inventory-modal-title').textContent = 'Add Inventory Item';
         document.getElementById('inventory-form').reset();
-        document.getElementById('modal-inventory').classList.remove('hidden');
+        ui.showModal('modal-inventory');
     },
 
     showEditInventoryItem: async function(itemId) {
@@ -2438,7 +2438,7 @@ const modals = {
                 document.getElementById('inventory-threshold').value = item.threshold;
                 document.getElementById('inventory-location').value = item.location || '';
                 
-                document.getElementById('modal-inventory').classList.remove('hidden');
+                ui.showModal('modal-inventory');
             }
         } catch (error) {
             console.error('Error loading inventory item:', error);
@@ -2447,7 +2447,7 @@ const modals = {
     },
 
     hideInventoryModal: function() {
-        document.getElementById('modal-inventory').classList.add('hidden');
+        ui.hideModal('modal-inventory');
         document.getElementById('inventory-form').reset();
         state.editingInventoryId = null;
     },
@@ -2509,7 +2509,7 @@ const modals = {
             }
             
             // Show modal
-            document.getElementById('modal-checkout').classList.remove('hidden');
+            ui.showModal('modal-checkout');
             
             // Determine if this is a consumable material
             const isMaterial = item.category === 'materials';
@@ -2618,7 +2618,7 @@ const modals = {
     },
 
     hideCheckoutModal: function() {
-        document.getElementById('modal-checkout').classList.add('hidden');
+        ui.hideModal('modal-checkout');
         
         // Clear checkboxes
         const checkboxes = document.querySelectorAll('.checkout-student-checkbox');
@@ -2966,7 +2966,7 @@ const modals = {
             document.getElementById('event-date').value = todayString;
         }
         
-        document.getElementById('modal-event').classList.remove('hidden');
+        ui.showModal('modal-event');
     },
 
     showEditEvent: async function(eventId) {
@@ -2982,7 +2982,7 @@ const modals = {
                 document.getElementById('event-category').value = event.category || 'general';
                 document.getElementById('event-description').value = event.description || '';
                 
-                document.getElementById('modal-event').classList.remove('hidden');
+                ui.showModal('modal-event');
             }
         } catch (error) {
             console.error('Error loading event:', error);
@@ -2991,7 +2991,7 @@ const modals = {
     },
 
     hideEventModal: function() {
-        document.getElementById('modal-event').classList.add('hidden');
+        ui.hideModal('modal-event');
         document.getElementById('event-form').reset();
         state.editingEventId = null;
     },
