@@ -2439,6 +2439,12 @@ pages.activityEdit = {
 
             const existingId = parseInt(row.dataset.cpId);
             if (existingId && existingIds.has(existingId)) {
+                // Carry forward fields that have no UI inputs (set via JSON import)
+                const existingCp = existingCps.find(cp => cp.id === existingId);
+                if (existingCp) {
+                    if (existingCp.skillsAssessable) cpData.skillsAssessable = existingCp.skillsAssessable;
+                    if (existingCp.certificationDemos) cpData.certificationDemos = existingCp.certificationDemos;
+                }
                 await db.checkpoints.update(existingId, cpData);
                 keptIds.add(existingId);
             } else if (cpData.title) {
