@@ -1048,7 +1048,13 @@
                                     <option value="Activity">Activity</option>
                                     <option value="Project">Project</option>
                                     <option value="Problem">Problem</option>
+                                    <option value="Contract">Contract</option>
                                 </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="fe-contract-code">Contract Code</label>
+                                <input type="text" id="fe-contract-code" class="form-input" placeholder="e.g., C1, C2">
+                                <p class="form-helper">Short label for this contract (student-facing)</p>
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="fe-phase">Phase</label>
@@ -1071,6 +1077,30 @@
                             <div class="form-group">
                                 <label class="form-label" for="fe-class-periods">Duration</label>
                                 <input type="text" id="fe-class-periods" class="form-input" placeholder="e.g., 3 periods (135 minutes total)">
+                            </div>
+                        </div>
+
+                        <!-- ── Sub-group: Contract Brief ── -->
+                        <div style="border-top: 1px solid var(--color-border); padding-top: var(--space-base); margin-top: var(--space-lg);">
+                            <p style="font-weight: 600; margin-bottom: var(--space-sm); font-size: var(--font-sm); color: var(--color-text-secondary);">CONTRACT BRIEF</p>
+                            <p class="form-helper" style="margin-bottom: var(--space-sm);">Student-facing contract details — synced to the widget.</p>
+                            <div class="form-group">
+                                <label class="form-label" for="fe-contract-client">Client Name</label>
+                                <input type="text" id="fe-contract-client" class="form-input" placeholder="e.g., Wildcat Athletics Department">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="fe-contract-problem">Problem Statement</label>
+                                <textarea id="fe-contract-problem" class="form-input" rows="3" placeholder="Describe the problem the student team will solve..."></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Constraints</label>
+                                <div id="fe-contract-constraints-list"></div>
+                                <button type="button" class="btn btn--ghost btn--sm" onclick="pages.activityEdit.addContractConstraint()">+ Add Constraint</button>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Deliverables</label>
+                                <div id="fe-contract-deliverables-list"></div>
+                                <button type="button" class="btn btn--ghost btn--sm" onclick="pages.activityEdit.addContractDeliverable()">+ Add Deliverable</button>
                             </div>
                         </div>
 
@@ -1107,6 +1137,23 @@
                                 <div id="fe-resource-links-list"></div>
                                 <button type="button" class="btn btn--ghost btn--sm" onclick="pages.activityEdit.addResourceLink()">+ Add Link</button>
                                 <p class="form-helper">Add helpful links (videos, references, rubrics) for students.</p>
+                            </div>
+                        </div>
+
+                        <!-- ── Sub-group: Certifications ── -->
+                        <div style="border-top: 1px solid var(--color-border); padding-top: var(--space-base); margin-top: var(--space-lg);">
+                            <p style="font-weight: 600; margin-bottom: var(--space-sm); font-size: var(--font-sm); color: var(--color-text-secondary);">CERTIFICATIONS</p>
+                            <div class="form-group">
+                                <label class="form-label">Required Certifications</label>
+                                <p class="form-helper">Equipment certs students must have before starting (student-facing)</p>
+                                <div id="fe-certs-required-list"></div>
+                                <button type="button" class="btn btn--ghost btn--sm" onclick="pages.activityEdit.addCertRequired()">+ Add Required Certification</button>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Available Certifications</label>
+                                <p class="form-helper">Certs students can earn during this activity (synced but not shown in widget)</p>
+                                <div id="fe-certs-available-list"></div>
+                                <button type="button" class="btn btn--ghost btn--sm" onclick="pages.activityEdit.addCertAvailable()">+ Add Available Certification</button>
                             </div>
                         </div>
 
@@ -1165,6 +1212,40 @@
                                 <div id="fe-documentation-checklist-list"></div>
                                 <button type="button" class="btn btn--ghost btn--sm" onclick="pages.activityEdit.addDocumentationItem()">+ Add Item</button>
                             </div>
+                        </div>
+
+                        <!-- ── Sub-group: Portfolio Prompts ── -->
+                        <div style="border-top: 1px solid var(--color-border); padding-top: var(--space-base); margin-top: var(--space-lg);">
+                            <p style="font-weight: 600; margin-bottom: var(--space-sm); font-size: var(--font-sm); color: var(--color-text-secondary);">PORTFOLIO PROMPTS</p>
+                            <p class="form-helper" style="margin-bottom: var(--space-sm);">Photo/documentation prompts for student portfolios (student-facing)</p>
+                            <div id="fe-portfolio-prompts-list"></div>
+                            <button type="button" class="btn btn--ghost btn--sm" onclick="pages.activityEdit.addPortfolioPrompt()">+ Add Portfolio Prompt</button>
+                        </div>
+
+                        <!-- ── Sub-group: Pacing Milestones ── -->
+                        <div style="border-top: 1px solid var(--color-border); padding-top: var(--space-base); margin-top: var(--space-lg);">
+                            <p style="font-weight: 600; margin-bottom: var(--space-sm); font-size: var(--font-sm); color: var(--color-text-secondary);">PACING MILESTONES</p>
+                            <p class="form-helper" style="margin-bottom: var(--space-sm);">Teacher-facing pacing descriptors (not synced to widget)</p>
+                            <div class="form-group">
+                                <label class="form-label" for="fe-pacing-ahead">Ahead</label>
+                                <textarea id="fe-pacing-ahead" class="form-input" rows="2" placeholder="What does 'ahead of pace' look like?"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="fe-pacing-on-time">On Time</label>
+                                <textarea id="fe-pacing-on-time" class="form-input" rows="2" placeholder="What does 'on pace' look like?"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="fe-pacing-behind">Behind</label>
+                                <textarea id="fe-pacing-behind" class="form-input" rows="2" placeholder="What does 'behind pace' look like?"></textarea>
+                            </div>
+                        </div>
+
+                        <!-- ── Sub-group: WebXam Coverage ── -->
+                        <div style="border-top: 1px solid var(--color-border); padding-top: var(--space-base); margin-top: var(--space-lg);">
+                            <p style="font-weight: 600; margin-bottom: var(--space-sm); font-size: var(--font-sm); color: var(--color-text-secondary);">WEBXAM COVERAGE</p>
+                            <p class="form-helper" style="margin-bottom: var(--space-sm);">WebXam competency codes covered (teacher-facing, not synced)</p>
+                            <div id="fe-webxam-coverage-list"></div>
+                            <button type="button" class="btn btn--ghost btn--sm" onclick="pages.activityEdit.addWebxamCode()">+ Add Competency Code</button>
                         </div>
 
                         <!-- ── Sub-group: Appendix ── -->
