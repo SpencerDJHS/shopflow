@@ -54,7 +54,7 @@ pages.skills = {
 
         skills.forEach(skill => {
             const levels = allLevels.filter(l => l.skillId === skill.id);
-            const counts = { Novice: 0, Developing: 0, Proficient: 0, Advanced: 0 };
+            const counts = { Beginning: 0, Developing: 0, Proficient: 0, Advanced: 0 };
             levels.forEach(l => { if (counts[l.level] !== undefined) counts[l.level]++; });
             const total = levels.length;
 
@@ -231,7 +231,7 @@ pages.skills = {
             'Advanced': '#f59e0b',
             'Proficient': 'var(--color-success)',
             'Developing': 'var(--color-info)',
-            'Novice': 'var(--color-text-tertiary)',
+            'Beginning': 'var(--color-error)',
         };
 
         let html = '<table style="width: 100%; border-collapse: collapse; font-size: var(--font-size-body-small);">';
@@ -249,8 +249,8 @@ pages.skills = {
                 let calcLevel = '';
                 const studentSubs = allSubmissions.filter(s => s.studentId === student.id && s.skillScores && s.skillScores[String(skill.id)]);
                 if (studentSubs.length > 0) {
-                    const levelValues = { 'Novice': 1, 'Developing': 2, 'Proficient': 3, 'Advanced': 4 };
-                    const valueLabels = { 1: 'Novice', 2: 'Developing', 3: 'Proficient', 4: 'Advanced' };
+                    const levelValues = { 'Beginning': 1, 'Developing': 2, 'Proficient': 3, 'Advanced': 4 };
+                    const valueLabels = { 1: 'Beginning', 2: 'Developing', 3: 'Proficient', 4: 'Advanced' };
                     studentSubs.sort((a, b) => (a.updatedAt || a.submittedAt || '').localeCompare(b.updatedAt || b.submittedAt || ''));
                     let totalWeight = 0, weightedSum = 0;
                     studentSubs.forEach((sub, idx) => {
@@ -270,7 +270,7 @@ pages.skills = {
                     <select onchange="pages.skills.saveSkillLevel(${student.id}, ${skill.id}, this.value)"
                         style="padding: 2px 4px; border: 2px solid ${color}; border-radius: var(--radius-sm); font-size: var(--font-size-caption); background: var(--color-background); cursor: pointer; width: 85px; color: ${color}; font-weight: 600;">
                         <option value="" ${!currentLevel ? 'selected' : ''} style="color: var(--color-text-primary);">—</option>
-                        <option value="Novice" ${currentLevel === 'Novice' ? 'selected' : ''} style="color: var(--color-text-primary);">Novice</option>
+                        <option value="Beginning" ${currentLevel === 'Beginning' ? 'selected' : ''} style="color: var(--color-text-primary);">Beginning</option>
                         <option value="Developing" ${currentLevel === 'Developing' ? 'selected' : ''} style="color: var(--color-text-primary);">Developing</option>
                         <option value="Proficient" ${currentLevel === 'Proficient' ? 'selected' : ''} style="color: var(--color-text-primary);">Proficient</option>
                         <option value="Advanced" ${currentLevel === 'Advanced' ? 'selected' : ''} style="color: var(--color-text-primary);">Advanced</option>
