@@ -1175,7 +1175,7 @@ pages.activityDetail = {
         const linkedSkills = linkedSkillIds.length > 0
             ? (await db.skills.toArray()).filter(s => linkedSkillIds.includes(s.id))
             : [];
-        const skillLevels = ['Advanced', 'Proficient', 'Developing', 'Novice'];
+        const skillLevels = ['Advanced', 'Proficient', 'Developing', 'Beginning'];
 
         if (!hasRubric && linkedSkills.length === 0) {
             container.innerHTML = '<p style="color: var(--color-text-tertiary);">No rubric or skills defined for this assignment. Edit the assignment to add rubric criteria or link skills.</p>';
