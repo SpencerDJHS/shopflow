@@ -310,8 +310,8 @@ async function getSkillCategories() {
 async function getCalculatedSkillLevels(studentId) {
     // Returns a Map of skillId -> calculated level based on assignment rubric skill scores
     // Weighted toward recent: each score gets weight = index + 1 (most recent = highest weight)
-    const levelValues = { 'Novice': 1, 'Developing': 2, 'Proficient': 3, 'Advanced': 4 };
-    const valueLabels = { 1: 'Novice', 2: 'Developing', 3: 'Proficient', 4: 'Advanced' };
+    const levelValues = { 'Beginning': 1, 'Developing': 2, 'Proficient': 3, 'Advanced': 4 };
+    const valueLabels = { 1: 'Beginning', 2: 'Developing', 3: 'Proficient', 4: 'Advanced' };
 
     const submissions = (await db.submissions.toArray())
         .filter(s => s.studentId === studentId && s.skillScores && Object.keys(s.skillScores).length > 0)
