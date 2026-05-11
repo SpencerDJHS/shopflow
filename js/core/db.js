@@ -156,6 +156,17 @@ db.version(14).stores({
     enrollments: '++id, studentId, period, schoolYear, [studentId+period+schoolYear], createdAt'
 });
 
+db.version(15).stores({
+    skillObservations: '++id, [studentId+skillId], studentId, skillId, activityId'
+}).upgrade(tx => {
+    // Sprint 19.1: Rename "Novice" → "Beginning" in all existing skillLevels records
+    return tx.table('skillLevels').toCollection().modify(record => {
+        if (record.level === 'Novice') {
+            record.level = 'Beginning';
+        }
+    });
+});
+
 // Open the database
 db.open().then(() => {
     console.log('Database initialized successfully');
