@@ -8,6 +8,10 @@ pages.checkpoint = {
     selectedCheckpoint: null,
     teamMembers: [],
     activityFilter: 'active',
+    _preloadedData: null,
+    _selectedPacing: null,
+    _pendingSkillRatings: {},   // { `${studentId}-${skillId}`: rating }
+    _pendingCertDemos: {},      // { `${studentId}-${toolId}`: true/false }
 
     render: async function() {
         this.reset();
@@ -83,6 +87,9 @@ pages.checkpoint = {
         this.selectedTeam = null;
         this.selectedCheckpoint = null;
         this.teamMembers = [];
+        this._selectedPacing = null;
+        this._pendingSkillRatings = {};
+        this._pendingCertDemos = {};
 
         document.getElementById('checkpoint-step-year').classList.remove('hidden');
         document.getElementById('checkpoint-step-activity').classList.add('hidden');
@@ -211,6 +218,9 @@ pages.checkpoint = {
 
             document.getElementById('checkpoint-step-team').classList.remove('hidden');
 
+            // Sprint 19.2: Pre-load all skill/cert/completion data for this activity
+            await this._preloadActivityData(activity);
+
         } catch (error) {
             console.error('Error loading teams:', error);
             ui.showToast('Failed to load teams', 'error');
@@ -267,6 +277,9 @@ pages.checkpoint = {
 
     selectCheckpoint: async function(checkpoint) {
         this.selectedCheckpoint = checkpoint;
+        this._selectedPacing = null;
+        this._pendingSkillRatings = {};
+        this._pendingCertDemos = {};
 
         document.querySelectorAll('.checkpoint-checkpoint-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.checkpointId == checkpoint.id);
@@ -275,6 +288,26 @@ pages.checkpoint = {
         document.getElementById('checkpoint-current-title').textContent =
             `${this.selectedTeam.name} — ${this.selectedActivity.name} — Checkpoint ${checkpoint.number}: ${checkpoint.title}`;
 
+        // ── Milestone display ──
+        const milestoneDiv = document.getElementById('checkpoint-milestone');
+        if (checkpoint.milestone && checkpoint.milestone.trim()) {
+            milestoneDiv.textContent = '🎯 Milestone: ' + checkpoint.milestone;
+            milestoneDiv.style.display = '';
+        } else {
+            milestoneDiv.style.display = 'none';
+        }
+
+        // ── LookFor collapsible ──
+        const lookForEl = document.getElementById('checkpoint-lookfor');
+        if (checkpoint.lookFor && checkpoint.lookFor.trim()) {
+            document.getElementById('checkpoint-lookfor-body').textContent = checkpoint.lookFor;
+            lookForEl.style.display = '';
+            lookForEl.removeAttribute('open');
+        } else {
+            lookForEl.style.display = 'none';
+        }
+
+        // ── Questions ──
         const questionsDiv = document.getElementById('checkpoint-questions');
         if (checkpoint.questions && (Array.isArray(checkpoint.questions) ? checkpoint.questions.length > 0 : checkpoint.questions.trim())) {
             if (Array.isArray(checkpoint.questions)) {
@@ -296,45 +329,145 @@ pages.checkpoint = {
                 qaHtml += '</tbody></table>';
                 questionsDiv.innerHTML = qaHtml;
             } else {
-                // Legacy: plain text questions
                 questionsDiv.innerHTML = `<strong>Questions/Criteria:</strong><p style="margin-top: var(--space-xs);">${escapeHtml(checkpoint.questions)}</p>`;
             }
         } else {
             questionsDiv.innerHTML = '';
         }
 
+        // ── Pacing: restore previous value if it exists ──
+        document.querySelectorAll('.checkpoint__pacing-btn').forEach(b => b.classList.remove('active'));
+        const preloaded = this._preloadedData || {};
+        const existingCompletions = (preloaded.completions || []).filter(c => c.checkpointId === checkpoint.id);
+        const completedStudentIds = existingCompletions.filter(c => c.completed).map(c => c.studentId);
+
+        // Read pacing from any existing completion for this team
+        const teamMemberIds = this.teamMembers.map(s => s.id);
+        const teamCompletion = existingCompletions.find(c => teamMemberIds.includes(c.studentId) && c.pacing);
+        if (teamCompletion && teamCompletion.pacing) {
+            this._selectedPacing = teamCompletion.pacing;
+            const pacingBtn = document.querySelector(`.checkpoint__pacing-btn[data-pacing="${teamCompletion.pacing}"]`);
+            if (pacingBtn) pacingBtn.classList.add('active');
+        }
+
+        // ── Determine assessable skills for this checkpoint ──
+        const skillsAssessable = checkpoint.skillsAssessable || [];
+        const allSkills = preloaded.skills || [];
+        const assessableSkills = allSkills.filter(s => skillsAssessable.includes(s.id));
+
+        // ── Determine certification demos for this checkpoint ──
+        const certDemoToolIds = checkpoint.certificationDemos || [];
+        const allTools = preloaded.tools || [];
+        const certTools = allTools.filter(t => certDemoToolIds.includes(t.id));
+
+        // ── Build student list ──
+        const container = document.getElementById('checkpoint-students-list');
+        container.innerHTML = '';
+
         try {
-            const existingCompletions = await db.checkpointCompletions
-                .where('checkpointId')
-                .equals(checkpoint.id)
-                .toArray();
-
-            const completedStudentIds = existingCompletions
-                .filter(c => c.completed)
-                .map(c => c.studentId);
-
-            const container = document.getElementById('checkpoint-students-list');
-            container.innerHTML = '';
-
             this.teamMembers.forEach(student => {
                 const isComplete = completedStudentIds.includes(student.id);
-                const item = document.createElement('div');
-                item.className = `checkpoint__student-item ${isComplete ? 'checkpoint__student-item--complete' : ''}`;
-                item.id = `checkpoint-student-${student.id}`;
+                const wrapper = document.createElement('div');
+                wrapper.className = `checkpoint__student-wrapper ${isComplete ? 'checkpoint__student-wrapper--complete' : ''}`;
+                wrapper.id = `checkpoint-student-${student.id}`;
 
-                item.innerHTML = `
-                    <input type="checkbox"
-                        id="check-${student.id}"
-                        ${isComplete ? 'checked' : ''}
-                        onchange="pages.checkpoint.toggleStudent(${student.id}, this.checked)">
-                    <label for="check-${student.id}" style="cursor: pointer; flex: 1;">
-                        ${escapeHtml(displayName(student))}
-                    </label>
-                    ${isComplete ? '<span class="badge badge--success">Complete</span>' : '<span class="badge badge--warning">Pending</span>'}
+                // ── Main row: checkbox + name + badge + assess button ──
+                let actionsHtml = '';
+                if (assessableSkills.length > 0) {
+                    actionsHtml += `<button type="button" class="checkpoint__assess-btn" id="assess-btn-${student.id}" onclick="pages.checkpoint.toggleSkillsPanel(${student.id})">Assess Skills</button>`;
+                }
+                actionsHtml += isComplete
+                    ? '<span class="badge badge--success">Complete</span>'
+                    : '<span class="badge badge--warning">Pending</span>';
+
+                let mainHtml = `
+                    <div class="checkpoint__student-main">
+                        <input type="checkbox"
+                            id="check-${student.id}"
+                            ${isComplete ? 'checked' : ''}
+                            onchange="pages.checkpoint.toggleStudent(${student.id}, this.checked)">
+                        <label for="check-${student.id}" class="checkpoint__student-name">
+                            ${escapeHtml(displayName(student))}
+                        </label>
+                        <div class="checkpoint__student-actions">
+                            ${actionsHtml}
+                        </div>
+                    </div>
                 `;
 
-                // Attach swipe gestures (touch only — PC skips)
-                gestures.makeSwipeable(item, {
+                // ── Quick note ──
+                mainHtml += `<input type="text" class="checkpoint__quick-note" id="note-${student.id}" placeholder="Quick note..." maxlength="200">`;
+
+                // ── Skills panel (collapsed by default) ──
+                if (assessableSkills.length > 0) {
+                    let skillsHtml = `<div class="checkpoint__skills-panel" id="skills-panel-${student.id}">`;
+                    assessableSkills.forEach(skill => {
+                        // Find current level from preloaded skillLevels
+                        const currentLevel = (preloaded.skillLevels || []).find(
+                            sl => sl.studentId === student.id && sl.skillId === skill.id
+                        );
+                        const levelText = currentLevel ? currentLevel.level : 'Not Assessed';
+                        const levelColor = this._getLevelColor(currentLevel ? currentLevel.level : null);
+
+                        // Check for existing observation for this checkpoint
+                        const existingObs = (preloaded.skillObservations || []).find(
+                            o => o.studentId === student.id && o.skillId === skill.id && o.checkpointId === checkpoint.id
+                        );
+                        const activeRating = existingObs ? existingObs.rating : null;
+                        if (existingObs) {
+                            this._pendingSkillRatings[`${student.id}-${skill.id}`] = existingObs.rating;
+                        }
+
+                        skillsHtml += `
+                            <div class="checkpoint__skill-row">
+                                <span class="checkpoint__skill-name">${escapeHtml(skill.name)}</span>
+                                <span class="checkpoint__skill-current" style="background: ${levelColor}15; color: ${levelColor};" id="skill-current-${student.id}-${skill.id}">${escapeHtml(levelText)}</span>
+                                <div class="checkpoint__skill-buttons">
+                                    ${['Beginning', 'Developing', 'Proficient', 'Advanced'].map(r => {
+                                        const abbr = r.charAt(0);
+                                        const isActive = activeRating === r ? ' active' : '';
+                                        return `<button type="button"
+                                            class="checkpoint__skill-btn checkpoint__skill-btn--${abbr}${isActive}"
+                                            id="skill-btn-${student.id}-${skill.id}-${abbr}"
+                                            title="${r}"
+                                            onclick="pages.checkpoint.setSkillRating(${student.id}, ${skill.id}, '${r}')">${abbr}</button>`;
+                                    }).join('')}
+                                </div>
+                            </div>
+                        `;
+                    });
+                    skillsHtml += '</div>';
+                    mainHtml += skillsHtml;
+                }
+
+                // ── Certification demo toggles ──
+                if (certTools.length > 0) {
+                    certTools.forEach(tool => {
+                        const existingCert = (preloaded.certifications || []).find(
+                            c => c.studentId === student.id && c.toolId === tool.id
+                        );
+                        const isChecked = existingCert ? true : false;
+                        if (isChecked) {
+                            this._pendingCertDemos[`${student.id}-${tool.id}`] = true;
+                        }
+                        mainHtml += `
+                            <div class="checkpoint__cert-row">
+                                <label>
+                                    <input type="checkbox" id="cert-${student.id}-${tool.id}"
+                                        ${isChecked ? 'checked' : ''}
+                                        onchange="pages.checkpoint.setCertDemo(${student.id}, ${tool.id}, this.checked)">
+                                    🏅 ${escapeHtml(tool.name)} Certification Demo
+                                </label>
+                            </div>
+                        `;
+                    });
+                }
+
+                wrapper.innerHTML = mainHtml;
+
+                // Attach swipe gestures to the main row
+                const mainRow = wrapper.querySelector('.checkpoint__student-main');
+                gestures.makeSwipeable(mainRow, {
                     onSwipeRight: () => {
                         const cb = document.getElementById(`check-${student.id}`);
                         if (cb && !cb.checked) {
@@ -353,10 +486,10 @@ pages.checkpoint = {
                     leftColor: 'var(--color-warning)',
                     rightIcon: '✓',
                     leftIcon: '↩',
-                    ignoreSelector: 'input[type="checkbox"]'
+                    ignoreSelector: 'input[type="checkbox"], button, .checkpoint__assess-btn'
                 });
 
-                container.appendChild(item);
+                container.appendChild(wrapper);
             });
 
             document.getElementById('checkpoint-step-students').classList.remove('hidden');
@@ -368,15 +501,16 @@ pages.checkpoint = {
     },
 
     toggleStudent: function(studentId, isChecked) {
-        const item = document.getElementById(`checkpoint-student-${studentId}`);
+        const wrapper = document.getElementById(`checkpoint-student-${studentId}`);
+        if (!wrapper) return;
         if (isChecked) {
-            item.classList.add('checkpoint__student-item--complete');
-            item.querySelector('.badge').className = 'badge badge--success';
-            item.querySelector('.badge').textContent = 'Complete';
+            wrapper.classList.add('checkpoint__student-wrapper--complete');
+            wrapper.querySelector('.badge').className = 'badge badge--success';
+            wrapper.querySelector('.badge').textContent = 'Complete';
         } else {
-            item.classList.remove('checkpoint__student-item--complete');
-            item.querySelector('.badge').className = 'badge badge--warning';
-            item.querySelector('.badge').textContent = 'Pending';
+            wrapper.classList.remove('checkpoint__student-wrapper--complete');
+            wrapper.querySelector('.badge').className = 'badge badge--warning';
+            wrapper.querySelector('.badge').textContent = 'Pending';
         }
     },
 
@@ -393,10 +527,18 @@ pages.checkpoint = {
     saveProgress: async function() {
         try {
             const checkpointId = this.selectedCheckpoint.id;
+            const activityId = this.selectedActivity.id;
+            const now = new Date().toISOString();
+            let completionCount = 0;
+            let skillObsCount = 0;
+            let certCount = 0;
+            let noteCount = 0;
 
+            // ── 1. Save checkpoint completions + pacing ──
             for (const student of this.teamMembers) {
                 const checkbox = document.getElementById(`check-${student.id}`);
                 const isComplete = checkbox ? checkbox.checked : false;
+                if (isComplete) completionCount++;
 
                 const existing = await db.checkpointCompletions
                     .where('[checkpointId+studentId]')
@@ -406,24 +548,99 @@ pages.checkpoint = {
                 if (existing) {
                     await db.checkpointCompletions.update(existing.id, {
                         completed: isComplete,
-                        completedAt: isComplete ? new Date().toISOString() : null,
-                        updatedAt: new Date().toISOString()
+                        completedAt: isComplete ? now : null,
+                        pacing: this._selectedPacing,
+                        updatedAt: now
                     });
                 } else {
                     await db.checkpointCompletions.add({
                         checkpointId: checkpointId,
                         studentId: student.id,
                         completed: isComplete,
-                        completedAt: isComplete ? new Date().toISOString() : null,
-                        createdAt: new Date().toISOString(),
-                        updatedAt: new Date().toISOString()
+                        completedAt: isComplete ? now : null,
+                        pacing: this._selectedPacing,
+                        createdAt: now,
+                        updatedAt: now
                     });
                 }
             }
 
-            ui.showToast('Progress saved successfully!', 'success');
+            // ── 2. Save skill observations ──
+            for (const [key, rating] of Object.entries(this._pendingSkillRatings)) {
+                const [studentIdStr, skillIdStr] = key.split('-');
+                const studentId = parseInt(studentIdStr);
+                const skillId = parseInt(skillIdStr);
 
-            // Refresh the live alerts board (alerts auto-clear when conditions resolve)
+                await this._saveSkillObservation(studentId, skillId, activityId, checkpointId, rating, now);
+                skillObsCount++;
+            }
+
+            // ── 3. Save certification demos ──
+            for (const [key, passed] of Object.entries(this._pendingCertDemos)) {
+                const [studentIdStr, toolIdStr] = key.split('-');
+                const studentId = parseInt(studentIdStr);
+                const toolId = parseInt(toolIdStr);
+
+                if (passed) {
+                    // Check if certification already exists
+                    const existingCert = await db.certifications
+                        .where('studentId').equals(studentId)
+                        .and(c => c.toolId === toolId)
+                        .first();
+
+                    if (!existingCert) {
+                        await db.certifications.add({
+                            studentId: studentId,
+                            toolId: toolId,
+                            certifiedAt: now,
+                            activityId: activityId,
+                            checkpointId: checkpointId,
+                            createdAt: now,
+                            updatedAt: now
+                        });
+                        certCount++;
+                        logAction('create', 'certification', toolId,
+                            `Certified student ${studentId} on tool ${toolId} at checkpoint`);
+                    }
+                }
+            }
+
+            // ── 4. Save quick notes ──
+            for (const student of this.teamMembers) {
+                const noteInput = document.getElementById(`note-${student.id}`);
+                const noteText = noteInput ? noteInput.value.trim() : '';
+                if (noteText) {
+                    await db.notes.add({
+                        entityType: 'checkpoint-observation',
+                        entityId: student.id,
+                        content: noteText,
+                        activityId: activityId,
+                        checkpointId: checkpointId,
+                        createdAt: now,
+                        updatedAt: now
+                    });
+                    noteCount++;
+                    logAction('create', 'note', student.id,
+                        `Checkpoint note for student ${student.id}`);
+                }
+            }
+
+            // ── 5. Write discipline: markDirty ──
+            driveSync.markDirty();
+
+            // ── 6. Summary toast ──
+            const parts = [`${completionCount} completion${completionCount !== 1 ? 's' : ''}`];
+            if (this._selectedPacing) parts.push(`pacing: ${this._selectedPacing}`);
+            if (skillObsCount > 0) parts.push(`${skillObsCount} skill observation${skillObsCount !== 1 ? 's' : ''}`);
+            if (certCount > 0) parts.push(`${certCount} cert demo${certCount !== 1 ? 's' : ''}`);
+            if (noteCount > 0) parts.push(`${noteCount} note${noteCount !== 1 ? 's' : ''}`);
+            ui.showToast(`Saved: ${parts.join(', ')}`, 'success');
+
+            logAction('update', 'checkpointCompletions', checkpointId,
+                `Saved checkpoint ${this.selectedCheckpoint.number}: ${parts.join(', ')}`);
+
+            // ── 7. Refresh preloaded data and alerts ──
+            await this._preloadActivityData(this.selectedActivity);
             alertsEngine.refresh().then(() => {
                 if (typeof pages !== 'undefined' && pages.dashboard && pages.dashboard.loadAlerts) {
                     pages.dashboard.loadAlerts();
@@ -433,6 +650,213 @@ pages.checkpoint = {
         } catch (error) {
             console.error('Error saving progress:', error);
             ui.showToast('Failed to save progress', 'error');
+        }
+    },
+
+    // ═══════════════════════════════════════════
+    // Sprint 19.2: New helper methods
+    // ═══════════════════════════════════════════
+
+    setPacing: function(pacing) {
+        this._selectedPacing = pacing;
+        document.querySelectorAll('.checkpoint__pacing-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.pacing === pacing);
+        });
+    },
+
+    toggleSkillsPanel: function(studentId) {
+        const panel = document.getElementById(`skills-panel-${studentId}`);
+        const btn = document.getElementById(`assess-btn-${studentId}`);
+        if (!panel) return;
+
+        const isOpen = panel.classList.contains('open');
+        panel.classList.toggle('open', !isOpen);
+        if (btn) btn.classList.toggle('active', !isOpen);
+    },
+
+    setSkillRating: function(studentId, skillId, rating) {
+        const key = `${studentId}-${skillId}`;
+        const currentPending = this._pendingSkillRatings[key];
+
+        // If tapping the same rating, deselect it
+        if (currentPending === rating) {
+            delete this._pendingSkillRatings[key];
+            // Clear all buttons for this skill
+            ['B', 'D', 'P', 'A'].forEach(a => {
+                const b = document.getElementById(`skill-btn-${studentId}-${skillId}-${a}`);
+                if (b) b.classList.remove('active');
+            });
+            return;
+        }
+
+        this._pendingSkillRatings[key] = rating;
+
+        // Update button highlights
+        ['B', 'D', 'P', 'A'].forEach(a => {
+            const b = document.getElementById(`skill-btn-${studentId}-${skillId}-${a}`);
+            if (b) b.classList.toggle('active', a === rating.charAt(0));
+        });
+    },
+
+    setCertDemo: function(studentId, toolId, checked) {
+        this._pendingCertDemos[`${studentId}-${toolId}`] = checked;
+    },
+
+    _getLevelColor: function(level) {
+        const colors = {
+            'Beginning': 'var(--color-error)',
+            'Developing': 'var(--color-info)',
+            'Proficient': 'var(--color-success)',
+            'Advanced': '#f59e0b'
+        };
+        return colors[level] || 'var(--color-text-tertiary)';
+    },
+
+    _preloadActivityData: async function(activity) {
+        try {
+            const activityId = activity.id;
+            const classId = this.selectedClass.id;
+
+            // All checkpoint IDs for this activity
+            const checkpoints = await db.checkpoints.where('activityId').equals(activityId).toArray();
+            const checkpointIds = checkpoints.map(c => c.id);
+
+            // All students in this class
+            const allStudents = excludeDeleted(await db.students.toArray());
+            const classStudents = allStudents.filter(s => s.classId === classId);
+            const studentIds = classStudents.map(s => s.id);
+
+            // Completions for all checkpoints in this activity
+            const allCompletions = await db.checkpointCompletions.toArray();
+            const completions = allCompletions.filter(c => checkpointIds.includes(c.checkpointId));
+
+            // Skill levels for class students
+            const allSkillLevels = await db.skillLevels.toArray();
+            const skillLevels = allSkillLevels.filter(sl => studentIds.includes(sl.studentId));
+
+            // Skill observations for this activity
+            const allSkillObs = await db.skillObservations.where('activityId').equals(activityId).toArray();
+
+            // All skills (for name lookup)
+            const skills = await db.skills.toArray();
+
+            // Certifications for class students
+            const allCerts = await db.certifications.toArray();
+            const certifications = allCerts.filter(c => studentIds.includes(c.studentId));
+
+            // Tools (for cert demo names)
+            let tools = [];
+            if (typeof db.tools !== 'undefined') {
+                try { tools = await db.tools.toArray(); } catch(e) { /* tools table may not exist */ }
+            }
+
+            this._preloadedData = {
+                completions,
+                skillLevels,
+                skillObservations: allSkillObs,
+                skills,
+                certifications,
+                tools
+            };
+        } catch (error) {
+            console.error('Error preloading activity data:', error);
+            this._preloadedData = { completions: [], skillLevels: [], skillObservations: [], skills: [], certifications: [], tools: [] };
+        }
+    },
+
+    _saveSkillObservation: async function(studentId, skillId, activityId, checkpointId, rating, now) {
+        // Check if an observation already exists for this student+skill+checkpoint
+        const existing = (await db.skillObservations
+            .where('[studentId+skillId]')
+            .equals([studentId, skillId])
+            .toArray()
+        ).find(o => o.checkpointId === checkpointId);
+
+        if (existing) {
+            // Update existing observation
+            await db.skillObservations.update(existing.id, {
+                rating: rating,
+                evidenceType: 'checkpoint_conversation',
+                updatedAt: now
+            });
+        } else {
+            // Create new observation
+            await db.skillObservations.add({
+                studentId: studentId,
+                skillId: skillId,
+                activityId: activityId,
+                checkpointId: checkpointId,
+                rating: rating,
+                evidenceType: 'checkpoint_conversation',
+                originalRating: rating,
+                createdAt: now,
+                updatedAt: now
+            });
+        }
+
+        logAction('create', 'skillObservation', skillId,
+            `Rated student ${studentId} as ${rating} on skill ${skillId}`);
+
+        // ── Current-best logic for skillLevels ──
+        const currentLevel = await db.skillLevels
+            .where('studentId').equals(studentId)
+            .and(sl => sl.skillId === skillId)
+            .first();
+
+        const levelValues = { 'Beginning': 1, 'Developing': 2, 'Proficient': 3, 'Advanced': 4 };
+        const newValue = levelValues[rating] || 0;
+        const currentValue = currentLevel ? (levelValues[currentLevel.level] || 0) : 0;
+
+        if (newValue >= currentValue) {
+            // New rating is same or higher — update automatically
+            if (currentLevel) {
+                await db.skillLevels.update(currentLevel.id, {
+                    level: rating,
+                    demonstratedIn: activityId,
+                    demonstratedAt: now,
+                    updatedAt: now
+                });
+            } else {
+                await db.skillLevels.add({
+                    studentId: studentId,
+                    skillId: skillId,
+                    level: rating,
+                    demonstratedIn: activityId,
+                    demonstratedAt: now,
+                    createdAt: now,
+                    updatedAt: now
+                });
+            }
+            // Update the current rating badge in the UI
+            const badge = document.getElementById(`skill-current-${studentId}-${skillId}`);
+            if (badge) {
+                const color = this._getLevelColor(rating);
+                badge.textContent = rating;
+                badge.style.background = color + '15';
+                badge.style.color = color;
+            }
+        } else {
+            // Downgrade — confirm with teacher
+            const currentName = currentLevel.level;
+            const confirmed = confirm(
+                `This student is currently rated ${currentName}. Record a ${rating} observation and update their current rating? This is unusual — current best normally only goes up.`
+            );
+            if (confirmed) {
+                await db.skillLevels.update(currentLevel.id, {
+                    level: rating,
+                    demonstratedIn: activityId,
+                    demonstratedAt: now,
+                    updatedAt: now
+                });
+                const badge = document.getElementById(`skill-current-${studentId}-${skillId}`);
+                if (badge) {
+                    const color = this._getLevelColor(rating);
+                    badge.textContent = rating;
+                    badge.style.background = color + '15';
+                    badge.style.color = color;
+                }
+            }
+            // Observation is still saved regardless of whether level was downgraded
         }
     }
 };
