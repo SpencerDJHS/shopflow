@@ -1432,13 +1432,30 @@
                     <div id="checkpoint-checkpoints-list" style="margin-top: var(--space-base);"></div>
                 </div>
                 
-                <!-- Step 5: Mark Students -->
+                <!-- Step 5: Mark Students (Sprint 19.2 Enhanced) -->
                 <div id="checkpoint-step-students" class="checkpoint-step hidden">
                     <h3 id="checkpoint-current-title"></h3>
                     
+                    <!-- Milestone display (hidden if checkpoint has no milestone) -->
+                    <div id="checkpoint-milestone" class="checkpoint__milestone" style="display: none;"></div>
+                    
+                    <!-- LookFor collapsible (hidden if checkpoint has no lookFor) -->
+                    <details id="checkpoint-lookfor" class="checkpoint__lookfor" style="display: none;">
+                        <summary>What to Look For</summary>
+                        <div class="checkpoint__lookfor-body" id="checkpoint-lookfor-body"></div>
+                    </details>
+                    
                     <div id="checkpoint-questions" style="background: var(--color-background-tertiary); padding: var(--space-base); border-radius: var(--radius-md); margin-top: var(--space-base);"></div>
                     
-                    <div style="margin-top: var(--space-lg);">
+                    <!-- Pacing selector -->
+                    <div class="checkpoint__pacing" id="checkpoint-pacing">
+                        <span class="checkpoint__pacing-label">Team Pacing:</span>
+                        <button type="button" class="checkpoint__pacing-btn checkpoint__pacing-btn--ahead" data-pacing="ahead" onclick="pages.checkpoint.setPacing('ahead')">Ahead</button>
+                        <button type="button" class="checkpoint__pacing-btn checkpoint__pacing-btn--ontime" data-pacing="on-time" onclick="pages.checkpoint.setPacing('on-time')">On Time</button>
+                        <button type="button" class="checkpoint__pacing-btn checkpoint__pacing-btn--behind" data-pacing="behind" onclick="pages.checkpoint.setPacing('behind')">Behind</button>
+                    </div>
+                    
+                    <div style="margin-top: var(--space-sm);">
                         <button class="btn btn--primary" onclick="pages.checkpoint.markAllComplete()">Mark All Complete</button>
                     </div>
                     
