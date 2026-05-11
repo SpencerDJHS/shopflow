@@ -441,6 +441,7 @@ pages.settings = {
                     db.notes.where('entityType').equals('student').filter(n => n.entityId === id).delete(),
                 ]);
                 if (db.skillLevels) await db.skillLevels.where('studentId').equals(id).delete();
+                if (db.skillObservations) await db.skillObservations.where('studentId').equals(id).delete();
                 if (db.certifications) await db.certifications.where('studentId').equals(id).delete();
                 if (db.checkouts) await db.checkouts.where('studentId').equals(id).delete();
             } else if (table === 'teams') {
@@ -1275,6 +1276,7 @@ pages.settings = {
                 checkpointCompletions: ['checkpointId', 'studentId'],
                 submissions: ['activityId', 'studentId'],
                 skillLevels: ['studentId', 'skillId'],
+                skillObservations: ['studentId', 'skillId', 'activityId', 'createdAt'],
                 certifications: ['studentId', 'toolId'],
                 wildcatSchedule: ['studentId', 'targetDate'],
                 teamMembers: ['teamId', 'studentId'],
@@ -1456,6 +1458,7 @@ pages.settings = {
                     checkpointCompletions: ['checkpointId', 'studentId'],
                     submissions: ['activityId', 'studentId'],
                     skillLevels: ['studentId', 'skillId'],
+                    skillObservations: ['studentId', 'skillId', 'activityId', 'createdAt'],
                     certifications: ['studentId', 'toolId'],
                     wildcatSchedule: ['studentId', 'targetDate'],
                     teamMembers: ['teamId', 'studentId'],
@@ -1574,6 +1577,7 @@ pages.settings = {
                     checkpointCompletions: ['checkpointId', 'studentId'],
                     submissions: ['activityId', 'studentId'],
                     skillLevels: ['studentId', 'skillId'],
+                    skillObservations: ['studentId', 'skillId', 'activityId', 'createdAt'],
                     certifications: ['studentId', 'toolId'],
                     wildcatSchedule: ['studentId', 'targetDate'],
                     teamMembers: ['teamId', 'studentId'],
