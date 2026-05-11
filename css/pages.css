@@ -1042,3 +1042,52 @@
         background-color: unset;
     }
 }
+
+/* ======== Sprint 19.3: Mastery Observation Styles ======== */
+.mastery-obs-section {
+    font-size: var(--font-size-body-small);
+}
+
+.mastery-obs-skill {
+    transition: border-color 0.15s ease;
+}
+
+.mastery-obs-skill:hover {
+    border-color: var(--color-info);
+}
+
+.mastery-badge {
+    display: inline-block;
+    line-height: 1.4;
+    white-space: nowrap;
+}
+
+.mastery-rating-btn {
+    transition: background 0.1s ease, border-color 0.1s ease, color 0.1s ease;
+}
+
+.mastery-rating-btn:active {
+    transform: scale(0.95);
+}
+
+.mastery-obs-entry:last-child {
+    border-bottom: none;
+}
+
+.mastery-prof-practice select {
+    font-weight: 500;
+}
+
+@media (max-width: 480px) {
+    .mastery-obs-record {
+        flex-direction: column;
+        align-items: stretch !important;
+    }
+    .mastery-obs-record > div:first-child {
+        justify-content: center;
+    }
+    .mastery-obs-record select,
+    .mastery-obs-record input[type="text"] {
+        width: 100%;
+    }
+}
