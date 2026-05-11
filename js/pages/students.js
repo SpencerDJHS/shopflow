@@ -553,7 +553,7 @@ pages.studentDetail = {
             allCompletions, allSkillLevels, allCertifications,
             allInventory, allSkills, allStandards,
             allActivityStandards, allActivitySkills, allTeamMembers,
-            allTeams, niData, allNotes
+            allTeams, niData, allNotes, allSkillObservations
         ] = await Promise.all([
             db.enrollments.toArray(),
             db.classes.toArray(),
@@ -572,7 +572,8 @@ pages.studentDetail = {
             db.teamMembers.toArray(),
             db.teams.toArray(),
             getActiveNonInstructionalDays(),
-            db.notes.toArray()
+            db.notes.toArray(),
+            db.skillObservations.toArray()
         ]);
 
         const activeYear = await getActiveSchoolYear();
@@ -617,6 +618,7 @@ pages.studentDetail = {
             allInventory, allSkills, allStandards,
             allActivityStandards, allActivitySkills,
             allTeamMembers, allTeams, team, allNotes,
+            allSkillObservations,
             activeYear, isNonInstructionalDay, periodYearMap,
             attendanceStats: { total, absent, late, present, pct }
         };
@@ -1284,47 +1286,197 @@ pages.studentDetail = {
     renderSkillsPortfolio: async function(studentId) {
         const container = document.getElementById('student-skills-portfolio');
         if (!container) return;
-        const { allSkills, allSkillLevels, allCertifications, allInventory, allStandards, allActivityStandards, allActivities, allSubmissions } = this._data;
+        const { allSkills, allSkillLevels, allCertifications, allInventory,
+                allActivities, allSubmissions, allCheckpoints,
+                allSkillObservations } = this._data;
 
-        let html = '';
+        // --- Helpers ---
+        const levelValues = { 'Beginning': 1, 'Developing': 2, 'Proficient': 3, 'Advanced': 4 };
+        const levelPct = { 'Beginning': 25, 'Developing': 50, 'Proficient': 75, 'Advanced': 100 };
+        const levelColors = {
+            'Beginning': 'var(--color-error)',
+            'Developing': 'var(--color-info)',
+            'Proficient': 'var(--color-success)',
+            'Advanced': '#f59e0b'
+        };
 
-        // Skills
-        if (allSkills.length > 0) {
-            const calcSkillMap = await getCalculatedSkillLevels(studentId);
-            const manualSkillMap = new Map(
-                allSkillLevels.filter(sl => sl.studentId === studentId).map(sl => [sl.skillId, sl.level])
-            );
-            const levelColors = { 'Advanced': 'var(--color-success)', 'Proficient': '#3b82f6', 'Developing': 'var(--color-warning)', 'Novice': 'var(--color-text-tertiary)' };
-
-            html += '<h4 style="margin-bottom: var(--space-sm);">Skills</h4>';
-            html += '<div style="display: flex; flex-wrap: wrap; gap: var(--space-sm); margin-bottom: var(--space-lg);">';
-            allSkills.forEach(skill => {
-                const calc = calcSkillMap.get(String(skill.id));
-                const manual = manualSkillMap.get(skill.id);
-                const level = calc ? calc.level : (manual || null);
-                const color = level ? (levelColors[level] || 'var(--color-text-tertiary)') : 'var(--color-border)';
-                html += `<div style="padding: var(--space-xs) var(--space-sm); border-radius: 12px; border: 2px solid ${color}; color: ${level ? color : 'var(--color-text-tertiary)'}; font-size: var(--font-size-body-small);">
-                    ${escapeHtml(skill.name || '')}${level ? ` — ${level}` : ''}
-                </div>`;
-            });
-            html += '</div>';
+        function getTrajectory(observations) {
+            if (!observations || observations.length < 2) return null;
+            const sorted = [...observations].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+            const latest = levelValues[sorted[0].rating] || 0;
+            const prior = levelValues[sorted[1].rating] || 0;
+            if (latest > prior) return 'improving';
+            if (latest < prior) return 'declining';
+            return 'stable';
         }
 
-        // Certifications
+        function trajectoryIcon(t) {
+            if (t === 'improving') return '<span class="sp-trajectory sp-trajectory--up">↑</span>';
+            if (t === 'declining') return '<span class="sp-trajectory sp-trajectory--down">↓</span>';
+            if (t === 'stable') return '<span class="sp-trajectory sp-trajectory--stable">→</span>';
+            return '<span class="sp-trajectory sp-trajectory--none">—</span>';
+        }
+
+        function ratingBadge(level) {
+            if (!level) return '';
+            const color = levelColors[level] || 'var(--color-text-tertiary)';
+            return `<span class="sp-rating-badge" style="background: ${color}22; color: ${color};">${escapeHtml(level)}</span>`;
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '—';
+            const d = new Date(dateStr);
+            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        // --- Data lookups ---
+        const studentLevels = allSkillLevels.filter(sl => sl.studentId === studentId);
+        const levelMap = new Map(studentLevels.map(sl => [sl.skillId, sl]));
+        const studentObs = allSkillObservations.filter(o => o.studentId === studentId);
+        const obsBySkill = new Map();
+        studentObs.forEach(o => {
+            if (!obsBySkill.has(o.skillId)) obsBySkill.set(o.skillId, []);
+            obsBySkill.get(o.skillId).push(o);
+        });
+        const activityMap = new Map(allActivities.map(a => [a.id, a]));
+        const checkpointMap = new Map(allCheckpoints.map(cp => [cp.id, cp]));
+
+        // --- Assessed vs unassessed skills ---
+        const assessedSkills = allSkills.filter(s => levelMap.has(s.id));
+        const unassessedSkills = allSkills.filter(s => !levelMap.has(s.id));
+
+        // --- Summary bar ---
+        let html = '';
+        const counts = { 'Beginning': 0, 'Developing': 0, 'Proficient': 0, 'Advanced': 0 };
+        let masterySum = 0;
+        assessedSkills.forEach(s => {
+            const lvl = levelMap.get(s.id);
+            if (lvl && counts.hasOwnProperty(lvl.level)) {
+                counts[lvl.level]++;
+                masterySum += (levelPct[lvl.level] || 0);
+            }
+        });
+        const masteryPct = assessedSkills.length > 0 ? Math.round(masterySum / assessedSkills.length) : 0;
+
+        // Professional Practice average
+        const studentSubs = allSubmissions.filter(sub => sub.studentId === studentId && sub.professionalPractice);
+        let ppHtml = '';
+        if (studentSubs.length > 0) {
+            let ppSum = 0;
+            studentSubs.forEach(sub => {
+                ppSum += (levelPct[sub.professionalPractice] || 0);
+            });
+            const ppPct = Math.round(ppSum / studentSubs.length);
+            ppHtml = `<div class="sp-summary-item">Professional Practice: <strong>${ppPct}%</strong></div>`;
+        }
+
+        if (assessedSkills.length > 0 || studentSubs.length > 0) {
+            html += `<div class="sp-summary-bar">
+                <div class="sp-summary-mastery">
+                    <span class="sp-summary-pct">${masteryPct}%</span>
+                    <span class="sp-summary-label">Skill Mastery</span>
+                </div>
+                <div class="sp-summary-counts">
+                    ${counts['Advanced'] ? `<span class="sp-count-chip" style="background: ${levelColors['Advanced']}22; color: ${levelColors['Advanced']};">${counts['Advanced']} Advanced</span>` : ''}
+                    ${counts['Proficient'] ? `<span class="sp-count-chip" style="background: ${levelColors['Proficient']}22; color: ${levelColors['Proficient']};">${counts['Proficient']} Proficient</span>` : ''}
+                    ${counts['Developing'] ? `<span class="sp-count-chip" style="background: ${levelColors['Developing']}22; color: ${levelColors['Developing']};">${counts['Developing']} Developing</span>` : ''}
+                    ${counts['Beginning'] ? `<span class="sp-count-chip" style="background: ${levelColors['Beginning']}22; color: ${levelColors['Beginning']};">${counts['Beginning']} Beginning</span>` : ''}
+                </div>
+                ${ppHtml}
+            </div>`;
+        }
+
+        // --- Skills grouped by category ---
+        if (assessedSkills.length > 0) {
+            const categories = new Map();
+            assessedSkills.forEach(skill => {
+                const cat = skill.category || 'Uncategorized';
+                if (!categories.has(cat)) categories.set(cat, []);
+                categories.get(cat).push(skill);
+            });
+
+            categories.forEach((skills, catName) => {
+                html += `<div class="sp-category-group">
+                    <h4 class="sp-category-header">${escapeHtml(catName)}</h4>`;
+
+                skills.forEach(skill => {
+                    const lvl = levelMap.get(skill.id);
+                    const obs = obsBySkill.get(skill.id) || [];
+                    const trajectory = getTrajectory(obs);
+                    const sortedObs = [...obs].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+                    const lastObs = sortedObs[0];
+                    const lastActivity = lastObs ? activityMap.get(lastObs.activityId) : null;
+                    const skillRowId = `sp-obs-${skill.id}`;
+
+                    html += `<div class="sp-skill-row">
+                        <div class="sp-skill-main" onclick="document.getElementById('${skillRowId}').classList.toggle('hidden')">
+                            <span class="sp-skill-name">${escapeHtml(skill.name || '')}</span>
+                            ${ratingBadge(lvl ? lvl.level : null)}
+                            ${trajectoryIcon(trajectory)}
+                            ${lastObs ? `<span class="sp-last-observed">${formatDate(lastObs.createdAt)}${lastActivity ? ' · ' + escapeHtml(lastActivity.title || '') : ''}</span>` : ''}
+                            <span class="sp-expand-toggle">${obs.length > 0 ? '▶ History (' + obs.length + ')' : ''}</span>
+                        </div>`;
+
+                    // Expandable observation history
+                    if (obs.length > 0) {
+                        html += `<div id="${skillRowId}" class="sp-obs-history hidden">`;
+
+                        // Progression dots
+                        html += '<div class="sp-progression-dots">';
+                        [...obs].sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || '')).forEach(o => {
+                            const color = levelColors[o.rating] || 'var(--color-text-tertiary)';
+                            html += `<span class="sp-dot" style="background: ${color};" title="${escapeHtml(o.rating || '')}"></span>`;
+                        });
+                        html += '</div>';
+
+                        sortedObs.forEach(o => {
+                            const act = activityMap.get(o.activityId);
+                            const cp = o.checkpointId ? checkpointMap.get(o.checkpointId) : null;
+                            html += `<div class="sp-obs-entry">
+                                <span class="sp-obs-date">${formatDate(o.createdAt)}</span>
+                                <span class="sp-obs-activity">${escapeHtml(act ? (act.title || '') : '—')}</span>
+                                ${cp ? `<span class="sp-obs-checkpoint">CP: ${escapeHtml(cp.title || '')}</span>` : ''}
+                                ${ratingBadge(o.rating)}
+                                ${o.evidenceType ? `<span class="sp-obs-evidence">${escapeHtml(o.evidenceType)}</span>` : ''}
+                                ${o.note ? `<span class="sp-obs-note">${escapeHtml(o.note)}</span>` : ''}
+                            </div>`;
+                        });
+                        html += '</div>';
+                    }
+                    html += '</div>';
+                });
+                html += '</div>';
+            });
+        }
+
+        // --- Not Yet Assessed ---
+        if (unassessedSkills.length > 0) {
+            html += `<div class="sp-not-assessed">
+                <h4 class="sp-category-header">Not Yet Assessed (${unassessedSkills.length})</h4>
+                <div class="sp-unassessed-list">`;
+            unassessedSkills.forEach(skill => {
+                html += `<span class="sp-unassessed-chip">${escapeHtml(skill.name || '')}</span>`;
+            });
+            html += '</div></div>';
+        }
+
+        // --- Certifications (preserved from existing code) ---
         const studentCerts = allCertifications.filter(c => c.studentId === studentId);
         if (studentCerts.length > 0) {
             const inventoryMap = new Map(allInventory.map(i => [i.id, i]));
-            html += '<h4 style="margin-bottom: var(--space-sm);">Certifications</h4>';
-            html += '<div style="display: flex; flex-wrap: wrap; gap: var(--space-sm); margin-bottom: var(--space-lg);">';
+            html += '<div class="sp-certs-section">';
+            html += '<h4 class="sp-category-header">Certifications</h4>';
+            html += '<div style="display: flex; flex-wrap: wrap; gap: var(--space-sm);">';
             studentCerts.forEach(cert => {
                 const item = inventoryMap.get(cert.toolId);
                 html += `<div style="padding: var(--space-xs) var(--space-sm); border-radius: 12px; background: var(--color-success)22; color: var(--color-success); font-size: var(--font-size-body-small); font-weight: 600;">
                     ✓ ${escapeHtml(item ? item.name : 'Unknown Tool')}
                 </div>`;
             });
-            html += '</div>';
+            html += '</div></div>';
         }
 
+        // --- Empty state ---
         if (!html) {
             html = '<p style="color: var(--color-text-tertiary); font-style: italic;">No skills or certifications recorded yet.</p>';
         }
