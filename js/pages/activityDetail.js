@@ -864,8 +864,22 @@ pages.activityDetail = {
             );
         }
 
+        // Sprint 19.3: Pre-load mastery data for the grading renderer
+        const masteryModeSetting = await db.settings.get('mastery-mode-' + activity.classId);
+        const isMasteryMode = masteryModeSetting?.value === 'current-best';
+        let allSkillObservations = [];
+        let skillLevelsMap = new Map();
+        if (isMasteryMode) {
+            allSkillObservations = await db.skillObservations.where('activityId').equals(activity.id).toArray();
+            const studentIds = students.map(s => s.id);
+            const allSkillLevels = await db.skillLevels.where('studentId').anyOf(studentIds).toArray();
+            allSkillLevels.forEach(sl => {
+                skillLevelsMap.set(sl.studentId + '-' + sl.skillId, sl);
+            });
+        }
+
         if (scoringType === 'rubric' || (await db.activitySkills.where('activityId').equals(activity.id).count()) > 0) {
-            await this.renderRubricGrading(container, activity, students, submissionMap, showSendBtns, sentToday);
+            await this.renderRubricGrading(container, activity, students, submissionMap, showSendBtns, sentToday, isMasteryMode, allSkillObservations, skillLevelsMap, checkpoints, allCompletions);
         } else if (scoringType === 'points') {
             this.renderPointsGrading(container, activity, students, submissionMap, showSendBtns, sentToday);
         } else {
@@ -1165,7 +1179,7 @@ pages.activityDetail = {
         container.prepend(mappingDiv);
     },
 
-    renderRubricGrading: async function(container, activity, students, submissionMap, showSendBtns, sentToday) {
+    renderRubricGrading: async function(container, activity, students, submissionMap, showSendBtns, sentToday, isMasteryMode, allSkillObservations, skillLevelsMap, checkpoints, allCompletions) {
         const rubric = activity.rubric;
         const hasRubric = rubric && rubric.levels && rubric.criteria && rubric.criteria.length > 0;
 
@@ -1285,8 +1299,139 @@ pages.activityDetail = {
                 html += '</tbody></table>';
             }
 
-            // --- Skill Assessment (not graded) ---
-            if (linkedSkills.length > 0) {
+            // --- Skill Assessment / Mastery Observations ---
+            if (linkedSkills.length > 0 && isMasteryMode) {
+                // ====== MASTERY MODE: Skill Observations ======
+                const levelColors = { 'Beginning': 'var(--color-error)', 'Developing': 'var(--color-info)', 'Proficient': 'var(--color-success)', 'Advanced': '#f59e0b' };
+                const levelAbbrev = { 'Beginning': 'B', 'Developing': 'D', 'Proficient': 'P', 'Advanced': 'A' };
+                const evidenceLabels = { 'checkpoint_conversation': 'Checkpoint', 'portfolio': 'Portfolio', 'video': 'Video', 'work_product': 'Work Product' };
+                const skillsAssessed = activity.skillsAssessed || [];
+
+                html += `<div class="mastery-obs-section" style="margin-top: var(--space-sm); padding-top: var(--space-sm); border-top: 2px dashed var(--color-border);">
+                    <div style="font-weight: 600; font-size: var(--font-size-body-small); color: var(--color-info); margin-bottom: var(--space-sm);">Skill Observations</div>`;
+
+                linkedSkills.forEach(skill => {
+                    const currentLevel = skillLevelsMap.get(student.id + '-' + skill.id);
+                    const currentRating = currentLevel?.level || null;
+                    const observations = allSkillObservations
+                        .filter(o => o.studentId === student.id && o.skillId === skill.id)
+                        .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+
+                    // Find level descriptors from skillsAssessed if available
+                    const descriptorEntry = skillsAssessed.find(sa => sa.skillName === skill.name);
+
+                    // Category badge
+                    const categoryBadge = skill.category
+                        ? `<span style="font-size: 10px; background: var(--color-background-secondary); color: var(--color-text-tertiary); padding: 1px 6px; border-radius: var(--radius-sm); margin-left: 6px;">${escapeHtml(skill.category)}</span>`
+                        : '';
+
+                    // Current rating badge
+                    const ratingBadge = currentRating
+                        ? `<span class="mastery-badge" style="background: ${levelColors[currentRating]}; color: white; padding: 2px 8px; border-radius: var(--radius-sm); font-size: 11px; font-weight: 600;">${escapeHtml(currentRating)}</span>`
+                        : `<span style="font-size: 11px; color: var(--color-text-tertiary); font-style: italic;">Not yet rated</span>`;
+
+                    html += `<div class="mastery-obs-skill" style="border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-sm); margin-bottom: var(--space-sm); background: var(--color-background);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-xs);">
+                            <div style="font-weight: 600; font-size: var(--font-size-body-small);">${escapeHtml(skill.name)}${categoryBadge}</div>
+                            <div>${ratingBadge}</div>
+                        </div>`;
+
+                    // Level descriptors (collapsible)
+                    if (descriptorEntry && descriptorEntry.levels) {
+                        html += `<details style="margin-bottom: var(--space-xs);">
+                            <summary style="cursor: pointer; font-size: 11px; color: var(--color-text-tertiary); user-select: none;">📖 Level Descriptors</summary>
+                            <div style="font-size: 11px; color: var(--color-text-secondary); padding: var(--space-xs); background: var(--color-background-secondary); border-radius: var(--radius-sm); margin-top: 4px;">
+                                ${Object.entries(descriptorEntry.levels).map(([lvl, desc]) =>
+                                    `<div style="margin-bottom: 4px;"><span style="font-weight: 600; color: ${levelColors[lvl] || 'inherit'};">${escapeHtml(lvl)}:</span> ${escapeHtml(desc)}</div>`
+                                ).join('')}
+                            </div>
+                        </details>`;
+                    }
+
+                    // Record Observation row
+                    html += `<div class="mastery-obs-record" style="display: flex; gap: var(--space-xs); align-items: center; flex-wrap: wrap; margin-bottom: var(--space-xs);">
+                        <div style="display: flex; gap: 4px;">`;
+                    ['Beginning', 'Developing', 'Proficient', 'Advanced'].forEach(level => {
+                        html += `<button class="mastery-rating-btn" id="obs-btn-${student.id}-${skill.id}-${level}"
+                            onclick="document.querySelectorAll('.mastery-rating-btn[data-obs-group=\\'${student.id}-${skill.id}\\']').forEach(b=>{b.classList.remove('selected');b.style.background='var(--color-background)';b.style.color='var(--color-text-tertiary)';b.style.borderColor='var(--color-border)';});this.classList.add('selected');this.style.background='${levelColors[level]}';this.style.color='white';this.style.borderColor='${levelColors[level]}';this.dataset.selectedLevel='${level}';"
+                            data-obs-group="${student.id}-${skill.id}"
+                            style="width: 36px; height: 32px; border-radius: var(--radius-sm); border: 2px solid var(--color-border); background: var(--color-background); color: var(--color-text-tertiary); cursor: pointer; font-size: 12px; font-weight: 700;"
+                            title="${level}">${levelAbbrev[level]}</button>`;
+                    });
+                    html += `</div>
+                        <select id="obs-evidence-${student.id}-${skill.id}" style="padding: 4px 6px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); font-size: 11px; flex-shrink: 0;">
+                            <option value="">Evidence...</option>
+                            <option value="checkpoint_conversation">Checkpoint</option>
+                            <option value="portfolio">Portfolio</option>
+                            <option value="video">Video</option>
+                            <option value="work_product">Work Product</option>
+                        </select>
+                        <input type="text" id="obs-note-${student.id}-${skill.id}" placeholder="Note (optional)" style="flex: 1; min-width: 80px; padding: 4px 6px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); font-size: 11px;">
+                        <button class="btn btn--primary" style="font-size: 11px; padding: 4px 10px; white-space: nowrap;"
+                            onclick="pages.activityDetail.saveSkillObservation(${activity.id}, ${student.id}, ${skill.id})">Save</button>
+                    </div>`;
+
+                    // Observation history
+                    if (observations.length > 0) {
+                        html += `<details style="margin-top: 4px;">
+                            <summary style="cursor: pointer; font-size: 11px; color: var(--color-text-tertiary); user-select: none;">📋 ${observations.length} prior observation${observations.length !== 1 ? 's' : ''}</summary>
+                            <div style="margin-top: 4px;">`;
+                        observations.forEach(obs => {
+                            const obsDate = obs.createdAt ? new Date(obs.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : '—';
+                            const obsColor = levelColors[obs.rating] || 'var(--color-text-tertiary)';
+                            const evLabel = evidenceLabels[obs.evidenceType] || obs.evidenceType || '';
+                            html += `<div class="mastery-obs-entry" style="display: flex; gap: var(--space-xs); align-items: center; padding: 3px 0; font-size: 11px; border-bottom: 1px solid var(--color-border);">
+                                <span style="color: var(--color-text-tertiary); min-width: 65px;">${obsDate}</span>
+                                <span class="mastery-badge" style="background: ${obsColor}; color: white; padding: 1px 6px; border-radius: var(--radius-sm); font-size: 10px; font-weight: 600;">${escapeHtml(obs.rating)}</span>
+                                <span style="color: var(--color-text-secondary);">${escapeHtml(evLabel)}</span>
+                                ${obs.note ? `<span style="color: var(--color-text-tertiary); font-style: italic;">${escapeHtml(obs.note)}</span>` : ''}
+                            </div>`;
+                        });
+                        html += `</div></details>`;
+                    }
+
+                    html += `</div>`; // close .mastery-obs-skill
+                });
+
+                // --- Professional Practice ---
+                const sub_pp = submissionMap.get(student.id);
+                const currentPP = sub_pp?.professionalPractice || '';
+
+                // Build pacing context summary from checkpoint completions
+                const cpCompletions = allCompletions.filter(c => c.studentId === student.id && checkpoints.some(cp => cp.id === c.checkpointId) && c.completed);
+                const totalCPs = checkpoints.length;
+                const completedCPs = cpCompletions.length;
+                let pacingCounts = { 'on-time': 0, 'behind': 0, 'ahead': 0 };
+                cpCompletions.forEach(c => {
+                    const p = c.pacing || 'on-time';
+                    if (pacingCounts[p] !== undefined) pacingCounts[p]++;
+                });
+                let pacingParts = [];
+                if (pacingCounts['on-time'] > 0) pacingParts.push(pacingCounts['on-time'] + ' on time');
+                if (pacingCounts['behind'] > 0) pacingParts.push(pacingCounts['behind'] + ' behind');
+                if (pacingCounts['ahead'] > 0) pacingParts.push(pacingCounts['ahead'] + ' ahead');
+                const pacingSummary = totalCPs > 0
+                    ? `${completedCPs}/${totalCPs} checkpoints complete` + (pacingParts.length > 0 ? ` • Pacing: ${pacingParts.join(', ')}` : '')
+                    : 'No checkpoints';
+
+                html += `<div class="mastery-prof-practice" style="margin-top: var(--space-sm); padding: var(--space-sm); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-background-secondary);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--space-xs);">
+                        <div style="font-weight: 600; font-size: var(--font-size-body-small);">Professional Practice</div>
+                        <select onchange="pages.activityDetail.saveProfessionalPractice(${activity.id}, ${student.id}, this.value)"
+                            style="padding: 4px 8px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); font-size: var(--font-size-body-small);">
+                            <option value="" ${!currentPP ? 'selected' : ''}>Select...</option>
+                            ${['Beginning', 'Developing', 'Proficient', 'Advanced'].map(l =>
+                                `<option value="${l}" ${currentPP === l ? 'selected' : ''} style="color: ${levelColors[l]};">${l}</option>`
+                            ).join('')}
+                        </select>
+                    </div>
+                    <div style="font-size: 11px; color: var(--color-text-tertiary); margin-top: 4px;">${pacingSummary}</div>
+                </div>`;
+
+                html += `</div>`; // close .mastery-obs-section
+
+            } else if (linkedSkills.length > 0) {
+                // ====== LEGACY MODE: Skill Assessment (not graded) ======
                 html += `<div style="margin-top: var(--space-sm); padding-top: var(--space-sm); border-top: 2px dashed var(--color-border);">
                     <table style="width: 100%; border-collapse: collapse; font-size: var(--font-size-body-small);">
                     <thead><tr>
@@ -2386,6 +2531,136 @@ pages.activityDetail = {
         } catch (err) {
             console.error('Auto-map rubric scores failed:', err);
             return 0;
+        }
+    },
+
+    saveSkillObservation: async function(activityId, studentId, skillId) {
+        try {
+            // Read selected rating from the button group
+            const selectedBtn = document.querySelector(`.mastery-rating-btn.selected[data-obs-group="${studentId}-${skillId}"]`);
+            if (!selectedBtn) {
+                ui.showToast('Select a rating level first', 'warning');
+                return;
+            }
+            const rating = selectedBtn.dataset.selectedLevel;
+
+            const evidenceEl = document.getElementById('obs-evidence-' + studentId + '-' + skillId);
+            const noteEl = document.getElementById('obs-note-' + studentId + '-' + skillId);
+            const evidenceType = evidenceEl?.value || '';
+            const note = noteEl?.value?.trim() || '';
+
+            if (!evidenceType) {
+                ui.showToast('Select an evidence type', 'warning');
+                return;
+            }
+
+            const now = new Date().toISOString();
+
+            // Save the observation record
+            await db.skillObservations.add({
+                studentId: studentId,
+                skillId: skillId,
+                activityId: activityId,
+                checkpointId: null,
+                rating: rating,
+                evidenceType: evidenceType,
+                note: note,
+                originalRating: rating,
+                createdAt: now,
+                updatedAt: now
+            });
+
+            // Check current skill level
+            const currentLevel = await db.skillLevels
+                .where('studentId').equals(studentId)
+                .filter(sl => sl.skillId === skillId)
+                .first();
+
+            const levelRank = { 'Beginning': 1, 'Developing': 2, 'Proficient': 3, 'Advanced': 4 };
+            const newRank = levelRank[rating] || 0;
+            const currentRank = currentLevel ? (levelRank[currentLevel.level] || 0) : 0;
+
+            let updateLevel = false;
+            if (!currentLevel || newRank >= currentRank) {
+                // New rating is >= current (or no current exists) — auto-update
+                updateLevel = true;
+            } else {
+                // Downgrade — confirm with teacher
+                const confirmed = confirm(
+                    'This student is currently rated ' + currentLevel.level + '. Record a ' + rating + ' observation and update their current rating? This is unusual — current best normally only goes up.'
+                );
+                if (confirmed) {
+                    updateLevel = true;
+                }
+                // If declined, observation is still saved but level stays
+            }
+
+            if (updateLevel) {
+                const levelData = {
+                    studentId: studentId,
+                    skillId: skillId,
+                    level: rating,
+                    demonstratedIn: activityId,
+                    demonstratedAt: now,
+                    updatedAt: now
+                };
+                if (currentLevel) {
+                    await db.skillLevels.update(currentLevel.id, levelData);
+                } else {
+                    levelData.createdAt = now;
+                    await db.skillLevels.add(levelData);
+                }
+            }
+
+            driveSync.markDirty();
+            logAction('skill-observation', 'skill', skillId, rating + ' observation for student ' + studentId);
+
+            ui.showToast('Observation saved', 'success');
+
+            // Re-render
+            const activity = await db.activities.get(activityId);
+            const allStudents = this._data?.allStudents || [];
+            this.renderSubmissions(activity, allStudents);
+
+        } catch (err) {
+            console.error('Error saving skill observation:', err);
+            ui.showToast('Failed to save observation', 'error');
+        }
+    },
+
+    saveProfessionalPractice: async function(activityId, studentId, level) {
+        try {
+            const existing = await db.submissions
+                .where('activityId').equals(activityId)
+                .filter(s => s.studentId === studentId)
+                .first();
+
+            const now = new Date().toISOString();
+            const ppValue = level || null;
+
+            if (existing) {
+                await db.submissions.update(existing.id, {
+                    professionalPractice: ppValue,
+                    updatedAt: now
+                });
+            } else {
+                await db.submissions.add({
+                    activityId: activityId,
+                    studentId: studentId,
+                    professionalPractice: ppValue,
+                    status: 'in-progress',
+                    submittedAt: now,
+                    updatedAt: now
+                });
+            }
+
+            driveSync.markDirty();
+            logAction('professional-practice', 'submission', activityId, level + ' for student ' + studentId);
+            ui.showToast('Professional Practice saved', 'success');
+
+        } catch (err) {
+            console.error('Error saving professional practice:', err);
+            ui.showToast('Failed to save', 'error');
         }
     },
 
