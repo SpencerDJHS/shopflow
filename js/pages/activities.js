@@ -623,6 +623,34 @@ pages.activityEdit = {
             this._appendixItems = activity.appendixItems || [];
             this.renderAppendixItems();
 
+            // Contract Brief fields
+            document.getElementById('fe-contract-code').value = activity.contractCode || '';
+            document.getElementById('fe-contract-client').value = activity.contractBrief?.clientName || '';
+            document.getElementById('fe-contract-problem').value = activity.contractBrief?.problemStatement || '';
+            this._contractConstraints = activity.contractBrief?.constraints || [];
+            this.renderContractConstraints();
+            this._contractDeliverables = activity.contractBrief?.deliverables || [];
+            this.renderContractDeliverables();
+
+            // Certifications
+            this._certsRequired = activity.certificationsRequired || [];
+            this.renderCertsRequired();
+            this._certsAvailable = activity.certificationsAvailable || [];
+            this.renderCertsAvailable();
+
+            // Portfolio Prompts
+            this._portfolioPrompts = activity.portfolioPrompts || [];
+            this.renderPortfolioPrompts();
+
+            // Pacing Milestones
+            document.getElementById('fe-pacing-ahead').value = activity.pacingMilestones?.ahead || '';
+            document.getElementById('fe-pacing-on-time').value = activity.pacingMilestones?.onTime || '';
+            document.getElementById('fe-pacing-behind').value = activity.pacingMilestones?.behind || '';
+
+            // WebXam Coverage
+            this._webxamCoverage = activity.webxamCoverage || [];
+            this.renderWebxamCoverage();
+
             // Hub sync status
             const syncStatusEl = document.getElementById('hub-sync-status');
             if (syncStatusEl) {
@@ -729,6 +757,34 @@ pages.activityEdit = {
 
             this._appendixItems = [];
             document.getElementById('fe-appendix-items-list').innerHTML = '';
+
+            // Reset Contract Brief fields
+            safeSet('fe-contract-code', 'value', '');
+            safeSet('fe-contract-client', 'value', '');
+            safeSet('fe-contract-problem', 'value', '');
+            this._contractConstraints = [];
+            document.getElementById('fe-contract-constraints-list').innerHTML = '';
+            this._contractDeliverables = [];
+            document.getElementById('fe-contract-deliverables-list').innerHTML = '';
+
+            // Reset Certifications
+            this._certsRequired = [];
+            document.getElementById('fe-certs-required-list').innerHTML = '';
+            this._certsAvailable = [];
+            document.getElementById('fe-certs-available-list').innerHTML = '';
+
+            // Reset Portfolio Prompts
+            this._portfolioPrompts = [];
+            document.getElementById('fe-portfolio-prompts-list').innerHTML = '';
+
+            // Reset Pacing Milestones
+            safeSet('fe-pacing-ahead', 'value', '');
+            safeSet('fe-pacing-on-time', 'value', '');
+            safeSet('fe-pacing-behind', 'value', '');
+
+            // Reset WebXam Coverage
+            this._webxamCoverage = [];
+            document.getElementById('fe-webxam-coverage-list').innerHTML = '';
 
             this.toggleScoringFields();
 
@@ -971,6 +1027,12 @@ pages.activityEdit = {
                 <input type="text" class="form-input fe-cp-desc" value="${escapeHtml(cp.description || '')}" placeholder="Description (optional)" style="flex: 1;">
                 <input type="date" class="form-input fe-cp-date" value="${cp.suggestedDate || ''}" style="width: 150px;">
             </div>
+            <div style="margin-bottom: var(--space-xs);">
+                <input type="text" class="form-input fe-cp-milestone" value="${escapeHtml(cp.milestone || '')}" placeholder="Milestone — what this checkpoint means for students (student-facing)" style="font-size: var(--font-size-body-small);">
+            </div>
+            <div style="margin-bottom: var(--space-xs);">
+                <textarea class="form-input fe-cp-lookfor" rows="2" placeholder="Teacher Notes — what to look for when checking this CP (not visible to students)" style="font-size: var(--font-size-body-small);">${escapeHtml(cp.lookFor || '')}</textarea>
+            </div>
             <div class="fe-cp-qa-container">${qaPairsHtml}</div>
             <button type="button" class="btn btn--secondary" style="margin-top: var(--space-xs); font-size: var(--font-size-body-small); padding: 4px 8px;" onclick="pages.activityEdit.addQAPair(this.previousElementSibling)">+ Add Q&A Pair</button>
         `;
@@ -1105,6 +1167,32 @@ pages.activityEdit = {
 
             // Activity Guide — Appendix
             appendixItems: this._appendixItems || [],
+
+            // Activity Guide — Contract Brief
+            contractCode: document.getElementById('fe-contract-code').value.trim() || null,
+            contractBrief: {
+                clientName: document.getElementById('fe-contract-client').value.trim() || '',
+                problemStatement: document.getElementById('fe-contract-problem').value.trim() || '',
+                constraints: this._contractConstraints || [],
+                deliverables: this._contractDeliverables || [],
+            },
+
+            // Activity Guide — Certifications
+            certificationsRequired: this._certsRequired || [],
+            certificationsAvailable: this._certsAvailable || [],
+
+            // Activity Guide — Portfolio Prompts
+            portfolioPrompts: this._portfolioPrompts || [],
+
+            // Activity Guide — Pacing Milestones (teacher-facing)
+            pacingMilestones: {
+                ahead: document.getElementById('fe-pacing-ahead').value.trim() || '',
+                onTime: document.getElementById('fe-pacing-on-time').value.trim() || '',
+                behind: document.getElementById('fe-pacing-behind').value.trim() || '',
+            },
+
+            // Activity Guide — WebXam Coverage (teacher-facing)
+            webxamCoverage: this._webxamCoverage || [],
         };
 
             // --- Handle pending Classroom creations ---
@@ -1466,6 +1554,179 @@ pages.activityEdit = {
         });
     },
 
+    // ── Contract Constraints helpers ──
+    _contractConstraints: [],
+
+    addContractConstraint: function(val) {
+        this._contractConstraints.push(val || '');
+        this.renderContractConstraints();
+    },
+
+    removeContractConstraint: function(index) {
+        this._contractConstraints.splice(index, 1);
+        this.renderContractConstraints();
+    },
+
+    renderContractConstraints: function() {
+        const container = document.getElementById('fe-contract-constraints-list');
+        if (!container) return;
+        container.innerHTML = '';
+        this._contractConstraints.forEach((item, i) => {
+            const row = document.createElement('div');
+            row.style.cssText = 'display: flex; gap: var(--space-xs); align-items: center; margin-bottom: var(--space-xs);';
+            row.innerHTML = `
+                <input type="text" class="form-input" placeholder="e.g., Must use only recycled materials" value="${escapeHtml(item)}" style="flex: 1;" onchange="pages.activityEdit._contractConstraints[${i}] = this.value">
+                <button type="button" class="btn btn--ghost btn--sm" onclick="pages.activityEdit.removeContractConstraint(${i})">✕</button>
+            `;
+            container.appendChild(row);
+        });
+    },
+
+    // ── Contract Deliverables helpers ──
+    _contractDeliverables: [],
+
+    addContractDeliverable: function(val) {
+        this._contractDeliverables.push(val || '');
+        this.renderContractDeliverables();
+    },
+
+    removeContractDeliverable: function(index) {
+        this._contractDeliverables.splice(index, 1);
+        this.renderContractDeliverables();
+    },
+
+    renderContractDeliverables: function() {
+        const container = document.getElementById('fe-contract-deliverables-list');
+        if (!container) return;
+        container.innerHTML = '';
+        this._contractDeliverables.forEach((item, i) => {
+            const row = document.createElement('div');
+            row.style.cssText = 'display: flex; gap: var(--space-xs); align-items: center; margin-bottom: var(--space-xs);';
+            row.innerHTML = `
+                <input type="text" class="form-input" placeholder="e.g., Working prototype" value="${escapeHtml(item)}" style="flex: 1;" onchange="pages.activityEdit._contractDeliverables[${i}] = this.value">
+                <button type="button" class="btn btn--ghost btn--sm" onclick="pages.activityEdit.removeContractDeliverable(${i})">✕</button>
+            `;
+            container.appendChild(row);
+        });
+    },
+
+    // ── Certifications Required helpers ──
+    _certsRequired: [],
+
+    addCertRequired: function(val) {
+        this._certsRequired.push(val || '');
+        this.renderCertsRequired();
+    },
+
+    removeCertRequired: function(index) {
+        this._certsRequired.splice(index, 1);
+        this.renderCertsRequired();
+    },
+
+    renderCertsRequired: function() {
+        const container = document.getElementById('fe-certs-required-list');
+        if (!container) return;
+        container.innerHTML = '';
+        this._certsRequired.forEach((item, i) => {
+            const row = document.createElement('div');
+            row.style.cssText = 'display: flex; gap: var(--space-xs); align-items: center; margin-bottom: var(--space-xs);';
+            row.innerHTML = `
+                <input type="text" class="form-input" placeholder="e.g., Band Saw" value="${escapeHtml(item)}" style="flex: 1;" onchange="pages.activityEdit._certsRequired[${i}] = this.value">
+                <button type="button" class="btn btn--ghost btn--sm" onclick="pages.activityEdit.removeCertRequired(${i})">✕</button>
+            `;
+            container.appendChild(row);
+        });
+    },
+
+    // ── Certifications Available helpers ──
+    _certsAvailable: [],
+
+    addCertAvailable: function(val) {
+        this._certsAvailable.push(val || '');
+        this.renderCertsAvailable();
+    },
+
+    removeCertAvailable: function(index) {
+        this._certsAvailable.splice(index, 1);
+        this.renderCertsAvailable();
+    },
+
+    renderCertsAvailable: function() {
+        const container = document.getElementById('fe-certs-available-list');
+        if (!container) return;
+        container.innerHTML = '';
+        this._certsAvailable.forEach((item, i) => {
+            const row = document.createElement('div');
+            row.style.cssText = 'display: flex; gap: var(--space-xs); align-items: center; margin-bottom: var(--space-xs);';
+            row.innerHTML = `
+                <input type="text" class="form-input" placeholder="e.g., Drill Press" value="${escapeHtml(item)}" style="flex: 1;" onchange="pages.activityEdit._certsAvailable[${i}] = this.value">
+                <button type="button" class="btn btn--ghost btn--sm" onclick="pages.activityEdit.removeCertAvailable(${i})">✕</button>
+            `;
+            container.appendChild(row);
+        });
+    },
+
+    // ── Portfolio Prompts helpers ──
+    _portfolioPrompts: [],
+
+    addPortfolioPrompt: function() {
+        this._portfolioPrompts.push({ title: '', promptText: '', linkedCheckpoint: '' });
+        this.renderPortfolioPrompts();
+    },
+
+    removePortfolioPrompt: function(index) {
+        this._portfolioPrompts.splice(index, 1);
+        this.renderPortfolioPrompts();
+    },
+
+    renderPortfolioPrompts: function() {
+        const container = document.getElementById('fe-portfolio-prompts-list');
+        if (!container) return;
+        container.innerHTML = '';
+        this._portfolioPrompts.forEach((prompt, i) => {
+            const block = document.createElement('div');
+            block.style.cssText = 'border: 1px solid var(--color-border); border-radius: var(--radius-base); padding: var(--space-sm); margin-bottom: var(--space-sm);';
+            block.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-xs);">
+                    <strong style="font-size: var(--font-sm);">Prompt ${i + 1}</strong>
+                    <button type="button" class="btn btn--ghost btn--sm" onclick="pages.activityEdit.removePortfolioPrompt(${i})">✕ Remove</button>
+                </div>
+                <input type="text" class="form-input" placeholder="Prompt title (e.g., Progress Photo)" style="margin-bottom: var(--space-xs);" value="${escapeHtml(prompt.title || '')}" onchange="pages.activityEdit._portfolioPrompts[${i}].title = this.value">
+                <textarea class="form-input" rows="2" placeholder="What should students capture or document?" style="margin-bottom: var(--space-xs);" onchange="pages.activityEdit._portfolioPrompts[${i}].promptText = this.value">${escapeHtml(prompt.promptText || '')}</textarea>
+                <input type="text" class="form-input" placeholder="Linked checkpoint # (optional, e.g., 3)" value="${escapeHtml(prompt.linkedCheckpoint || '')}" onchange="pages.activityEdit._portfolioPrompts[${i}].linkedCheckpoint = this.value">
+            `;
+            container.appendChild(block);
+        });
+    },
+
+    // ── WebXam Coverage helpers ──
+    _webxamCoverage: [],
+
+    addWebxamCode: function(val) {
+        this._webxamCoverage.push(val || '');
+        this.renderWebxamCoverage();
+    },
+
+    removeWebxamCode: function(index) {
+        this._webxamCoverage.splice(index, 1);
+        this.renderWebxamCoverage();
+    },
+
+    renderWebxamCoverage: function() {
+        const container = document.getElementById('fe-webxam-coverage-list');
+        if (!container) return;
+        container.innerHTML = '';
+        this._webxamCoverage.forEach((code, i) => {
+            const row = document.createElement('div');
+            row.style.cssText = 'display: flex; gap: var(--space-xs); align-items: center; margin-bottom: var(--space-xs);';
+            row.innerHTML = `
+                <input type="text" class="form-input" placeholder="e.g., 3.1.2" value="${escapeHtml(code)}" style="flex: 1;" onchange="pages.activityEdit._webxamCoverage[${i}] = this.value">
+                <button type="button" class="btn btn--ghost btn--sm" onclick="pages.activityEdit.removeWebxamCode(${i})">✕</button>
+            `;
+            container.appendChild(row);
+        });
+    },
+
     // ── Sync to Hub (Sprint 17) ──
     syncToHub: async function() {
         const activityId = state.editingActivityId;
@@ -1628,11 +1889,18 @@ pages.activityEdit = {
                     assessmentQuestions: activity.assessmentQuestions || [],
                     documentationChecklist: activity.documentationChecklist || [],
                     appendixItems: activity.appendixItems || [],
+                    // Contract Brief (student-facing)
+                    contractCode: activity.contractCode || '',
+                    contractBrief: activity.contractBrief || {},
+                    certificationsRequired: activity.certificationsRequired || [],
+                    certificationsAvailable: activity.certificationsAvailable || [],
+                    portfolioPrompts: activity.portfolioPrompts || [],
                     checkpoints: checkpoints.map(cp => ({
                         number: cp.number,
                         title: cp.title || '',
                         description: cp.description || '',
-                        suggestedDate: cp.suggestedDate || ''
+                        suggestedDate: cp.suggestedDate || '',
+                        milestone: cp.milestone || ''
                     })),
                     students: studentRows
                 }]
@@ -2160,6 +2428,8 @@ pages.activityEdit = {
                 title: row.querySelector('.fe-cp-title').value.trim(),
                 description: row.querySelector('.fe-cp-desc').value.trim(),
                 suggestedDate: row.querySelector('.fe-cp-date').value || null,
+                milestone: row.querySelector('.fe-cp-milestone')?.value.trim() || '',
+                lookFor: row.querySelector('.fe-cp-lookfor')?.value.trim() || '',
                 questions: Array.from(row.querySelectorAll('.checkpoint-qa-row')).map(qaRow => ({
                     question: qaRow.querySelector('.cp-question').value.trim(),
                     expectedResponse: qaRow.querySelector('.cp-expected-response').value.trim()
