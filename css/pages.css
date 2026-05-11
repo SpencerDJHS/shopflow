@@ -552,6 +552,304 @@
     margin: var(--space-lg) 0;
 }
 
+/* ── Sprint 19.2: Checkpoint Interaction Enhancements ── */
+
+/* Milestone display */
+.checkpoint__milestone {
+    background-color: var(--color-background-tertiary);
+    border-left: 4px solid #f59e0b;
+    padding: var(--space-base) var(--space-lg);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-base);
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+/* LookFor collapsible */
+.checkpoint__lookfor {
+    margin-bottom: var(--space-base);
+}
+
+.checkpoint__lookfor summary {
+    cursor: pointer;
+    font-size: var(--font-size-body-small);
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    padding: var(--space-xs) 0;
+    user-select: none;
+}
+
+.checkpoint__lookfor .checkpoint__lookfor-body {
+    background-color: var(--color-background-tertiary);
+    border-radius: var(--radius-md);
+    padding: var(--space-base);
+    margin-top: var(--space-xs);
+    font-size: var(--font-size-body-small);
+    color: var(--color-text-secondary);
+    line-height: 1.5;
+}
+
+/* Pacing selector */
+.checkpoint__pacing {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-lg);
+    flex-wrap: wrap;
+}
+
+.checkpoint__pacing-label {
+    font-weight: 600;
+    font-size: var(--font-size-body);
+    margin-right: var(--space-xs);
+}
+
+.checkpoint__pacing-btn {
+    padding: var(--space-xs) var(--space-base);
+    border: 2px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-background);
+    cursor: pointer;
+    font-weight: 600;
+    font-size: var(--font-size-body-small);
+    transition: all var(--transition-fast);
+    min-width: 90px;
+    text-align: center;
+}
+
+.checkpoint__pacing-btn:hover {
+    opacity: 0.85;
+}
+
+.checkpoint__pacing-btn--ahead {
+    color: var(--color-info);
+    border-color: var(--color-info);
+}
+.checkpoint__pacing-btn--ahead.active {
+    background-color: var(--color-info);
+    color: white;
+}
+
+.checkpoint__pacing-btn--ontime {
+    color: var(--color-success);
+    border-color: var(--color-success);
+}
+.checkpoint__pacing-btn--ontime.active {
+    background-color: var(--color-success);
+    color: white;
+}
+
+.checkpoint__pacing-btn--behind {
+    color: var(--color-error);
+    border-color: var(--color-error);
+}
+.checkpoint__pacing-btn--behind.active {
+    background-color: var(--color-error);
+    color: white;
+}
+
+/* Enhanced student item — needs to wrap content vertically now */
+.checkpoint__student-wrapper {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-sm);
+    transition: all var(--transition-fast);
+    overflow: hidden;
+}
+
+.checkpoint__student-wrapper--complete {
+    background-color: rgba(22, 163, 74, 0.1);
+    border-color: var(--color-success);
+}
+
+.checkpoint__student-main {
+    display: flex;
+    align-items: center;
+    gap: var(--space-base);
+    padding: var(--space-base);
+    cursor: pointer;
+}
+
+.checkpoint__student-main input[type="checkbox"] {
+    width: 24px;
+    height: 24px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.checkpoint__student-name {
+    flex: 1;
+    cursor: pointer;
+}
+
+.checkpoint__student-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    flex-shrink: 0;
+    flex-wrap: wrap;
+}
+
+/* Quick note input */
+.checkpoint__quick-note {
+    width: 100%;
+    padding: var(--space-xs) var(--space-base);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-body-small);
+    background: var(--color-background);
+    color: var(--color-text-primary);
+    margin: 0 var(--space-base) var(--space-base);
+}
+
+.checkpoint__quick-note::placeholder {
+    color: var(--color-text-tertiary);
+}
+
+/* Assess Skills toggle button */
+.checkpoint__assess-btn {
+    font-size: var(--font-size-body-small);
+    padding: var(--space-xs) var(--space-sm);
+    border: 1px solid var(--color-primary);
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--color-primary);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all var(--transition-fast);
+}
+
+.checkpoint__assess-btn:hover {
+    background: var(--color-primary);
+    color: white;
+}
+
+.checkpoint__assess-btn.active {
+    background: var(--color-primary);
+    color: white;
+}
+
+/* Skills assessment panel */
+.checkpoint__skills-panel {
+    display: none;
+    padding: var(--space-base) var(--space-lg);
+    border-top: 1px solid var(--color-border);
+    background: var(--color-background-tertiary);
+}
+
+.checkpoint__skills-panel.open {
+    display: block;
+}
+
+.checkpoint__skill-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-sm);
+    padding: var(--space-xs) 0;
+    flex-wrap: wrap;
+}
+
+.checkpoint__skill-name {
+    font-size: var(--font-size-body-small);
+    font-weight: 500;
+    flex: 1;
+    min-width: 100px;
+}
+
+.checkpoint__skill-current {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
+.checkpoint__skill-buttons {
+    display: flex;
+    gap: 4px;
+}
+
+.checkpoint__skill-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 2px solid var(--color-border);
+    background: var(--color-background);
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 12px;
+    transition: all var(--transition-fast);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+
+.checkpoint__skill-btn:hover {
+    transform: scale(1.1);
+}
+
+.checkpoint__skill-btn--B {
+    color: var(--color-error);
+    border-color: var(--color-error);
+}
+.checkpoint__skill-btn--B.active {
+    background: var(--color-error);
+    color: white;
+}
+
+.checkpoint__skill-btn--D {
+    color: var(--color-info);
+    border-color: var(--color-info);
+}
+.checkpoint__skill-btn--D.active {
+    background: var(--color-info);
+    color: white;
+}
+
+.checkpoint__skill-btn--P {
+    color: var(--color-success);
+    border-color: var(--color-success);
+}
+.checkpoint__skill-btn--P.active {
+    background: var(--color-success);
+    color: white;
+}
+
+.checkpoint__skill-btn--A {
+    color: #f59e0b;
+    border-color: #f59e0b;
+}
+.checkpoint__skill-btn--A.active {
+    background: #f59e0b;
+    color: white;
+}
+
+/* Certification demo toggle */
+.checkpoint__cert-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: var(--space-xs) var(--space-lg);
+    border-top: 1px solid var(--color-border);
+    background: var(--color-background-tertiary);
+    font-size: var(--font-size-body-small);
+}
+
+.checkpoint__cert-row label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    cursor: pointer;
+}
+
+.checkpoint__cert-row input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+}
+
 /* ========================================== */
 /* PAGE: INVENTORY                            */
 /* ========================================== */
