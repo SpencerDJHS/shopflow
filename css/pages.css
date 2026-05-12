@@ -741,6 +741,77 @@
     display: block;
 }
 
+/* Skill rubric expand */
+.checkpoint__skill-row-wrapper {
+    border-bottom: 1px solid var(--color-border);
+    padding-bottom: var(--space-xs);
+    margin-bottom: var(--space-xs);
+}
+
+.checkpoint__skill-row-wrapper:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.checkpoint__skill-name--tappable {
+    cursor: pointer;
+    color: var(--color-primary);
+}
+
+.checkpoint__skill-name--tappable:hover {
+    text-decoration: underline;
+}
+
+.checkpoint__rubric-chevron {
+    font-size: 10px;
+    display: inline-block;
+    transition: transform var(--transition-fast);
+}
+
+.checkpoint__rubric {
+    display: none;
+    padding: var(--space-xs) var(--space-sm) var(--space-sm);
+    margin-top: var(--space-xs);
+    background: var(--color-background);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border);
+}
+
+.checkpoint__rubric.open {
+    display: block;
+}
+
+.checkpoint__rubric-level {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-xs);
+    padding: 3px 0;
+    font-size: var(--font-size-body-small);
+    line-height: 1.4;
+}
+
+.checkpoint__rubric-badge {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+    flex-shrink: 0;
+    border: 1px solid;
+}
+
+.checkpoint__rubric-label {
+    flex-shrink: 0;
+    min-width: 80px;
+}
+
+.checkpoint__rubric-desc {
+    color: var(--color-text-secondary);
+}
+
 .checkpoint__skill-row {
     display: flex;
     align-items: center;
@@ -1041,276 +1112,4 @@
     .checkpoint__student-item:hover {
         background-color: unset;
     }
-}
-
-/* ======== Sprint 19.3: Mastery Observation Styles ======== */
-.mastery-obs-section {
-    font-size: var(--font-size-body-small);
-}
-
-.mastery-obs-skill {
-    transition: border-color 0.15s ease;
-}
-
-.mastery-obs-skill:hover {
-    border-color: var(--color-info);
-}
-
-.mastery-badge {
-    display: inline-block;
-    line-height: 1.4;
-    white-space: nowrap;
-}
-
-.mastery-rating-btn {
-    transition: background 0.1s ease, border-color 0.1s ease, color 0.1s ease;
-}
-
-.mastery-rating-btn:active {
-    transform: scale(0.95);
-}
-
-.mastery-obs-entry:last-child {
-    border-bottom: none;
-}
-
-.mastery-prof-practice select {
-    font-weight: 500;
-}
-
-@media (max-width: 480px) {
-    .mastery-obs-record {
-        flex-direction: column;
-        align-items: stretch !important;
-    }
-    .mastery-obs-record > div:first-child {
-        justify-content: center;
-    }
-    .mastery-obs-record select,
-    .mastery-obs-record input[type="text"] {
-        width: 100%;
-    }
-}
-
-/* =============================================
-   SKILL PROFILE — Student Detail Skills Tab
-   ============================================= */
-.sp-summary-bar {
-    display: flex;
-    align-items: center;
-    gap: var(--space-lg);
-    flex-wrap: wrap;
-    padding: var(--space-md);
-    background: var(--color-surface-raised);
-    border-radius: var(--radius-lg);
-    margin-bottom: var(--space-lg);
-}
-
-.sp-summary-mastery {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    min-width: 80px;
-}
-
-.sp-summary-pct {
-    font-size: 2rem;
-    font-weight: 700;
-    color: var(--color-text-primary);
-    line-height: 1;
-}
-
-.sp-summary-label {
-    font-size: var(--font-size-body-small);
-    color: var(--color-text-tertiary);
-    margin-top: 2px;
-}
-
-.sp-summary-counts {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-xs);
-}
-
-.sp-count-chip {
-    padding: 2px 10px;
-    border-radius: 12px;
-    font-size: var(--font-size-body-small);
-    font-weight: 600;
-}
-
-.sp-summary-item {
-    font-size: var(--font-size-body-small);
-    color: var(--color-text-secondary);
-}
-
-/* Category groups */
-.sp-category-group {
-    margin-bottom: var(--space-lg);
-}
-
-.sp-category-header {
-    border-left: 4px solid var(--color-primary);
-    padding-left: var(--space-sm);
-    margin-bottom: var(--space-sm);
-    font-size: var(--font-size-body);
-    font-weight: 600;
-    color: var(--color-text-primary);
-}
-
-/* Skill rows */
-.sp-skill-row {
-    margin-bottom: var(--space-xs);
-}
-
-.sp-skill-main {
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-    flex-wrap: wrap;
-    padding: var(--space-xs) var(--space-sm);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    transition: background 0.15s;
-}
-
-.sp-skill-main:hover {
-    background: var(--color-surface-raised);
-}
-
-.sp-skill-name {
-    font-weight: 500;
-    font-size: var(--font-size-body);
-    color: var(--color-text-primary);
-}
-
-/* Rating badges */
-.sp-rating-badge {
-    padding: 2px 8px;
-    border-radius: 10px;
-    font-size: var(--font-size-body-small);
-    font-weight: 600;
-    white-space: nowrap;
-}
-
-/* Trajectory indicators */
-.sp-trajectory {
-    font-weight: 700;
-    font-size: var(--font-size-body);
-}
-
-.sp-trajectory--up {
-    color: var(--color-success);
-}
-
-.sp-trajectory--down {
-    color: var(--color-error);
-}
-
-.sp-trajectory--stable {
-    color: var(--color-text-tertiary);
-}
-
-.sp-trajectory--none {
-    color: var(--color-text-tertiary);
-}
-
-.sp-last-observed {
-    font-size: var(--font-size-body-small);
-    color: var(--color-text-tertiary);
-}
-
-.sp-expand-toggle {
-    font-size: var(--font-size-body-small);
-    color: var(--color-primary);
-    margin-left: auto;
-}
-
-/* Observation history */
-.sp-obs-history {
-    padding: var(--space-sm) var(--space-sm) var(--space-sm) var(--space-lg);
-    margin-bottom: var(--space-sm);
-}
-
-.sp-progression-dots {
-    display: flex;
-    gap: 4px;
-    align-items: center;
-    margin-bottom: var(--space-sm);
-}
-
-.sp-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    display: inline-block;
-}
-
-.sp-obs-entry {
-    display: flex;
-    align-items: baseline;
-    gap: var(--space-sm);
-    flex-wrap: wrap;
-    padding: var(--space-xs) 0;
-    border-bottom: 1px solid var(--color-border);
-    font-size: var(--font-size-body-small);
-}
-
-.sp-obs-entry:last-child {
-    border-bottom: none;
-}
-
-.sp-obs-date {
-    color: var(--color-text-tertiary);
-    min-width: 90px;
-}
-
-.sp-obs-activity {
-    font-weight: 500;
-    color: var(--color-text-primary);
-}
-
-.sp-obs-checkpoint {
-    color: var(--color-text-secondary);
-    font-style: italic;
-}
-
-.sp-obs-evidence {
-    color: var(--color-text-tertiary);
-    background: var(--color-surface-raised);
-    padding: 1px 6px;
-    border-radius: 6px;
-}
-
-.sp-obs-note {
-    color: var(--color-text-secondary);
-    flex-basis: 100%;
-    padding-left: var(--space-sm);
-    font-style: italic;
-}
-
-/* Not Yet Assessed */
-.sp-not-assessed {
-    margin-bottom: var(--space-lg);
-}
-
-.sp-unassessed-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-xs);
-}
-
-.sp-unassessed-chip {
-    padding: var(--space-xs) var(--space-sm);
-    border-radius: 12px;
-    border: 1px dashed var(--color-border);
-    color: var(--color-text-tertiary);
-    font-size: var(--font-size-body-small);
-    font-style: italic;
-}
-
-/* Certifications section */
-.sp-certs-section {
-    margin-top: var(--space-lg);
-    margin-bottom: var(--space-lg);
 }
