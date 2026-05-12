@@ -1909,6 +1909,23 @@
                             </div>
                         </div>
                     </div>
+                    <!-- Import Reference Data -->
+                    <div class="card mb-md" style="margin-bottom:var(--space-md);">
+                        <div class="card__header">
+                            <h3>Import Reference Data</h3>
+                            <p class="text-secondary text-sm">Import skills, equipment, and standards from JSON files. Existing records with the same name/code are skipped.</p>
+                        </div>
+                        <div class="card__body">
+                            <div style="display: flex; gap: var(--space-base); flex-wrap: wrap;">
+                                <button class="btn btn--secondary" onclick="document.getElementById('import-skills-file').click()">📚 Import Skills</button>
+                                <input type="file" id="import-skills-file" accept=".json" style="display: none;" onchange="pages.settings.importSkillsLibrary(event)">
+                                <button class="btn btn--secondary" onclick="document.getElementById('import-equipment-file').click()">🔧 Import Equipment</button>
+                                <input type="file" id="import-equipment-file" accept=".json" style="display: none;" onchange="pages.settings.importEquipment(event)">
+                                <button class="btn btn--secondary" onclick="document.getElementById('import-standards-file').click()">📋 Import Standards</button>
+                                <input type="file" id="import-standards-file" accept=".json" style="display: none;" multiple onchange="pages.settings.importStandards(event)">
+                            </div>
+                        </div>
+                    </div>
                     <!-- Google Drive Auto-Sync (Sprint 8) -->
                     <div class="card mb-md" style="margin-bottom:var(--space-md);">
                         <div class="card__header">
