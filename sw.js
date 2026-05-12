@@ -4,7 +4,7 @@
 // Update CACHE_VERSION when deploying changes.
 // ============================================
 
-const CACHE_VERSION = 'esb-v66';
+const CACHE_VERSION = 'esb-v68';
 
 const EXTERNAL_SCRIPTS = [
     'https://unpkg.com/dexie@4.0.8/dist/dexie.js',
