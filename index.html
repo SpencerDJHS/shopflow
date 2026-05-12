@@ -1926,6 +1926,21 @@
                             </div>
                         </div>
                     </div>
+                    <!-- Import Contract Guide -->
+                    <div class="card mb-md" style="margin-bottom:var(--space-md);">
+                        <div class="card__header">
+                            <h3>Import Contract Guide</h3>
+                            <p class="text-secondary text-sm">Import a contract guide JSON to create or update an activity with checkpoints, skills, certifications, and standards. If a matching activity exists (by contractCode), it will be updated.</p>
+                        </div>
+                        <div class="card__body">
+                            <textarea id="import-contract-json" rows="8" class="form-input" style="width: 100%; font-family: monospace; font-size: 12px;" placeholder="Paste contract guide JSON here..."></textarea>
+                            <div style="display: flex; gap: var(--space-base); flex-wrap: wrap; margin-top: var(--space-base);">
+                                <button class="btn btn--primary" onclick="pages.settings.importContractGuide('paste')">📋 Import from Paste</button>
+                                <button class="btn btn--secondary" onclick="document.getElementById('import-contract-file').click()">📁 Import from File</button>
+                                <input type="file" id="import-contract-file" accept=".json" style="display: none;" onchange="pages.settings.importContractGuide('file', event)">
+                            </div>
+                        </div>
+                    </div>
                     <!-- Google Drive Auto-Sync (Sprint 8) -->
                     <div class="card mb-md" style="margin-bottom:var(--space-md);">
                         <div class="card__header">
