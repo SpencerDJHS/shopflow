@@ -26,13 +26,17 @@ pages.dashboard = {
                 .toArray();
 
             // Get enrollments filtered to active school year + deduplicated
+            // Exclude soft-deleted students so their orphaned enrollments don't inflate counts
             const activeYear = await getActiveSchoolYear();
             const periodYearMapSetting = await db.settings.get('period-year-map');
             const periodYearMap = periodYearMapSetting ? periodYearMapSetting.value : {};
+            const allStudents = excludeDeleted(await db.students.toArray());
+            const activeStudentIds = new Set(allStudents.map(s => s.id));
             const rawEnrollments = await db.enrollments.toArray();
             const enrollmentSeen = new Set();
             const allEnrollments = rawEnrollments.filter(e => {
                 if (e.schoolYear && e.schoolYear !== activeYear) return false;
+                if (!activeStudentIds.has(e.studentId)) return false;
                 const key = `${e.studentId}-${e.period}`;
                 if (enrollmentSeen.has(key)) return false;
                 enrollmentSeen.add(key);
