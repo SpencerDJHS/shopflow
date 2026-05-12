@@ -418,21 +418,46 @@ pages.checkpoint = {
                             this._pendingSkillRatings[`${student.id}-${skill.id}`] = existingObs.rating;
                         }
 
+                        // Look up level descriptors from activity.skillsAssessed
+                        const skillAssessedInfo = (this.selectedActivity.skillsAssessed || []).find(
+                            sa => sa.skillId === skill.id
+                        );
+                        const hasRubric = skillAssessedInfo && skillAssessedInfo.levels && Object.keys(skillAssessedInfo.levels).length > 0;
+                        const rubricId = `rubric-${student.id}-${skill.id}`;
+
                         skillsHtml += `
-                            <div class="checkpoint__skill-row">
-                                <span class="checkpoint__skill-name">${escapeHtml(skill.name)}</span>
-                                <span class="checkpoint__skill-current" style="background: ${levelColor}15; color: ${levelColor};" id="skill-current-${student.id}-${skill.id}">${escapeHtml(levelText)}</span>
-                                <div class="checkpoint__skill-buttons">
-                                    ${['Beginning', 'Developing', 'Proficient', 'Advanced'].map(r => {
-                                        const abbr = r.charAt(0);
-                                        const isActive = activeRating === r ? ' active' : '';
-                                        return `<button type="button"
-                                            class="checkpoint__skill-btn checkpoint__skill-btn--${abbr}${isActive}"
-                                            id="skill-btn-${student.id}-${skill.id}-${abbr}"
-                                            title="${r}"
-                                            onclick="pages.checkpoint.setSkillRating(${student.id}, ${skill.id}, '${r}')">${abbr}</button>`;
-                                    }).join('')}
+                            <div class="checkpoint__skill-row-wrapper">
+                                <div class="checkpoint__skill-row">
+                                    <span class="checkpoint__skill-name ${hasRubric ? 'checkpoint__skill-name--tappable' : ''}" ${hasRubric ? `onclick="pages.checkpoint.toggleRubric('${rubricId}')"` : ''}>
+                                        ${hasRubric ? '<span class="checkpoint__rubric-chevron" id="chevron-' + rubricId + '">▶</span> ' : ''}${escapeHtml(skill.name)}
+                                    </span>
+                                    <span class="checkpoint__skill-current" style="background: ${levelColor}15; color: ${levelColor};" id="skill-current-${student.id}-${skill.id}">${escapeHtml(levelText)}</span>
+                                    <div class="checkpoint__skill-buttons">
+                                        ${['Beginning', 'Developing', 'Proficient', 'Advanced'].map(r => {
+                                            const abbr = r.charAt(0);
+                                            const isActive = activeRating === r ? ' active' : '';
+                                            return `<button type="button"
+                                                class="checkpoint__skill-btn checkpoint__skill-btn--${abbr}${isActive}"
+                                                id="skill-btn-${student.id}-${skill.id}-${abbr}"
+                                                title="${r}"
+                                                onclick="pages.checkpoint.setSkillRating(${student.id}, ${skill.id}, '${r}')">${abbr}</button>`;
+                                        }).join('')}
+                                    </div>
                                 </div>
+                                ${hasRubric ? `
+                                <div class="checkpoint__rubric" id="${rubricId}">
+                                    ${['Beginning', 'Developing', 'Proficient', 'Advanced'].map(level => {
+                                        const desc = skillAssessedInfo.levels[level];
+                                        if (!desc) return '';
+                                        const abbr = level.charAt(0);
+                                        const color = this._getLevelColor(level);
+                                        return `<div class="checkpoint__rubric-level">
+                                            <span class="checkpoint__rubric-badge checkpoint__skill-btn--${abbr}" style="background: ${color}20; color: ${color}; border-color: ${color};">${abbr}</span>
+                                            <span class="checkpoint__rubric-label" style="color: ${color}; font-weight: 600;">${level}:</span>
+                                            <span class="checkpoint__rubric-desc">${escapeHtml(desc)}</span>
+                                        </div>`;
+                                    }).join('')}
+                                </div>` : ''}
                             </div>
                         `;
                     });
@@ -663,6 +688,15 @@ pages.checkpoint = {
             btn.classList.toggle('active', btn.dataset.pacing === pacing);
         });
     },
+
+   toggleRubric: function(rubricId) {
+        const rubric = document.getElementById(rubricId);
+        const chevron = document.getElementById('chevron-' + rubricId);
+        if (!rubric) return;
+        const isOpen = rubric.classList.contains('open');
+        rubric.classList.toggle('open', !isOpen);
+        if (chevron) chevron.textContent = isOpen ? '▶' : '▼';
+    }, 
 
     toggleSkillsPanel: function(studentId) {
         const panel = document.getElementById(`skills-panel-${studentId}`);
