@@ -2317,4 +2317,153 @@ pages.settings = {
             ui.showToast('Failed to save bell schedules', 'error');
         }
     },
+
+    // ----------------------------------------
+    // REFERENCE DATA IMPORTS
+    // ----------------------------------------
+
+    _readJsonFile: function(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try { resolve(JSON.parse(e.target.result)); }
+                catch (err) { reject(new Error('Invalid JSON file')); }
+            };
+            reader.onerror = () => reject(new Error('Failed to read file'));
+            reader.readAsText(file);
+        });
+    },
+
+    importSkillsLibrary: async function(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        event.target.value = '';
+        try {
+            const data = await this._readJsonFile(file);
+            if (!Array.isArray(data)) throw new Error('Expected a JSON array');
+            const existing = await db.skills.toArray();
+            const existingNames = new Set(existing.map(s => s.name.toLowerCase()));
+            let imported = 0, skipped = 0;
+            const categories = new Set();
+            for (const item of data) {
+                categories.add(item.category);
+                if (existingNames.has(item.name.toLowerCase())) {
+                    skipped++;
+                    continue;
+                }
+                await db.skills.add({
+                    name: item.name,
+                    category: item.category,
+                    description: item.description || '',
+                    year: item.year || null,
+                    createdAt: new Date().toISOString()
+                });
+                imported++;
+            }
+            // Update skill-categories setting
+            await db.settings.put({ key: 'skill-categories', value: [...categories] });
+            driveSync.markDirty();
+            await logAction('import', 'skills', null, `Imported ${imported} skills from library`);
+            ui.showToast(`Imported ${imported} skills (${skipped} skipped as duplicates)`, 'success');
+        } catch (err) {
+            console.error('Skills import error:', err);
+            ui.showToast('Failed to import skills: ' + err.message, 'error');
+        }
+    },
+
+    importEquipment: async function(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        event.target.value = '';
+        try {
+            const data = await this._readJsonFile(file);
+            if (!Array.isArray(data)) throw new Error('Expected a JSON array');
+            const existing = await db.inventory.toArray();
+            const existingNames = new Set(existing.map(i => i.name.toLowerCase()));
+            let imported = 0, skipped = 0;
+            for (const item of data) {
+                if (existingNames.has(item.name.toLowerCase())) {
+                    skipped++;
+                    continue;
+                }
+                await db.inventory.add({
+                    name: item.name,
+                    category: item.category || '',
+                    quantity: item.quantity || 0,
+                    threshold: 0,
+                    location: '',
+                    itemNumber: item.itemNumber || '',
+                    notes: item.notes || '',
+                    createdAt: new Date().toISOString()
+                });
+                imported++;
+            }
+            driveSync.markDirty();
+            await logAction('import', 'inventory', null, `Imported ${imported} equipment items`);
+            ui.showToast(`Imported ${imported} equipment items (${skipped} skipped as duplicates)`, 'success');
+        } catch (err) {
+            console.error('Equipment import error:', err);
+            ui.showToast('Failed to import equipment: ' + err.message, 'error');
+        }
+    },
+
+    importStandards: async function(event) {
+        const files = Array.from(event.target.files);
+        if (!files.length) return;
+        event.target.value = '';
+        try {
+            // Read and merge all selected files
+            const allRecords = [];
+            for (const file of files) {
+                const data = await this._readJsonFile(file);
+                if (!Array.isArray(data)) throw new Error(`${file.name} is not a JSON array`);
+                allRecords.push(...data);
+            }
+            // Deduplicate by code — prefer records with more fields (E1 has weight/exam)
+            const byCode = new Map();
+            for (const rec of allRecords) {
+                const code = rec.code;
+                const existing = byCode.get(code);
+                if (!existing) {
+                    byCode.set(code, rec);
+                } else {
+                    // Prefer the one with weight/exam (E1 format)
+                    if (rec.weight && !existing.weight) {
+                        byCode.set(code, rec);
+                    }
+                }
+            }
+            // Normalize and import
+            const existingStandards = await db.standards.toArray();
+            const existingCodes = new Set(existingStandards.map(s => s.code));
+            let imported = 0, skipped = 0;
+            for (const [code, rec] of byCode) {
+                if (existingCodes.has(code)) {
+                    skipped++;
+                    continue;
+                }
+                // Normalize: E1 has strand instead of category
+                let category = rec.category || '';
+                if (!category && rec.strand) {
+                    category = rec.strand.replace(/^\d+\.\d+\s+/, '');
+                }
+                await db.standards.add({
+                    code: code,
+                    name: rec.name,
+                    category: category,
+                    description: '',
+                    weight: rec.weight || null,
+                    exam: rec.exam || null,
+                    createdAt: new Date().toISOString()
+                });
+                imported++;
+            }
+            driveSync.markDirty();
+            await logAction('import', 'standards', null, `Imported ${imported} standards`);
+            ui.showToast(`Imported ${imported} standards (${skipped} skipped as duplicates)`, 'success');
+        } catch (err) {
+            console.error('Standards import error:', err);
+            ui.showToast('Failed to import standards: ' + err.message, 'error');
+        }
+    },
 };
