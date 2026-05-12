@@ -2466,4 +2466,315 @@ pages.settings = {
             ui.showToast('Failed to import standards: ' + err.message, 'error');
         }
     },
+
+    // --- Contract Guide JSON Import Pipeline ---
+    importContractGuide: async function(mode, event) {
+        try {
+            // ── Step 1: Read JSON ──
+            let jsonText;
+            if (mode === 'paste') {
+                jsonText = document.getElementById('import-contract-json').value.trim();
+                if (!jsonText) {
+                    ui.showToast('Paste contract guide JSON into the text area first.', 'error');
+                    return;
+                }
+            } else if (mode === 'file') {
+                const file = event.target.files[0];
+                if (!file) return;
+                jsonText = await file.text();
+                event.target.value = ''; // reset file input
+            }
+
+            let guide;
+            try {
+                guide = JSON.parse(jsonText);
+            } catch (e) {
+                ui.showToast('Invalid JSON — check for syntax errors.', 'error');
+                return;
+            }
+
+            // Basic validation
+            if (!guide.contractCode) {
+                ui.showToast('JSON is missing "contractCode" field.', 'error');
+                return;
+            }
+
+            const warnings = [];
+            const timestamp = new Date().toISOString();
+
+            // ── Step 2: Resolve skill names → skill IDs ──
+            const allSkills = await db.skills.toArray();
+            const skillNameMap = new Map(allSkills.map(s => [s.name.toLowerCase(), s]));
+
+            const resolvedSkillIds = []; // For activitySkills junction records
+            const resolvedSkillsAssessed = []; // For activity.skillsAssessed (with level descriptors)
+
+            if (guide.skillsAssessed && Array.isArray(guide.skillsAssessed)) {
+                for (const sa of guide.skillsAssessed) {
+                    const match = skillNameMap.get(sa.skillName.toLowerCase());
+                    if (match) {
+                        resolvedSkillIds.push(match.id);
+                        // Transform levelDescriptors keys to capitalized format for grading tab
+                        const levels = {};
+                        if (sa.levelDescriptors) {
+                            if (sa.levelDescriptors.beginning) levels['Beginning'] = sa.levelDescriptors.beginning;
+                            if (sa.levelDescriptors.developing) levels['Developing'] = sa.levelDescriptors.developing;
+                            if (sa.levelDescriptors.proficient) levels['Proficient'] = sa.levelDescriptors.proficient;
+                            if (sa.levelDescriptors.advanced) levels['Advanced'] = sa.levelDescriptors.advanced;
+                        }
+                        resolvedSkillsAssessed.push({
+                            skillName: sa.skillName,
+                            skillId: match.id,
+                            checkpoints: sa.checkpoints || [],
+                            levels: levels
+                        });
+                    } else {
+                        warnings.push(`Skill not found: "${sa.skillName}"`);
+                    }
+                }
+            }
+
+            // ── Step 3: Resolve equipment names → tool IDs ──
+            const allTools = await db.inventory.toArray();
+            const toolNameMap = new Map(allTools.map(t => [t.name.toLowerCase(), t]));
+
+            const resolvedCertsRequired = [];
+            if (guide.certificationsRequired && Array.isArray(guide.certificationsRequired)) {
+                for (const certName of guide.certificationsRequired) {
+                    const match = toolNameMap.get(certName.toLowerCase());
+                    if (match) {
+                        resolvedCertsRequired.push({ name: certName, toolId: match.id });
+                    } else {
+                        warnings.push(`Equipment not found for certification: "${certName}"`);
+                        resolvedCertsRequired.push({ name: certName, toolId: null });
+                    }
+                }
+            }
+
+            const resolvedCertsAvailable = [];
+            if (guide.certificationsAvailable && Array.isArray(guide.certificationsAvailable)) {
+                for (const certName of guide.certificationsAvailable) {
+                    const match = toolNameMap.get(certName.toLowerCase());
+                    if (match) {
+                        resolvedCertsAvailable.push({ name: certName, toolId: match.id });
+                    } else {
+                        warnings.push(`Equipment not found for certification: "${certName}"`);
+                        resolvedCertsAvailable.push({ name: certName, toolId: null });
+                    }
+                }
+            }
+
+            // ── Step 4: Resolve WebXam codes → standard IDs ──
+            const allStandards = await db.standards.toArray();
+            const standardCodeMap = new Map(allStandards.map(s => [s.code, s]));
+
+            const resolvedStandardIds = [];
+            if (guide.webxamCoverage && Array.isArray(guide.webxamCoverage)) {
+                for (const code of guide.webxamCoverage) {
+                    const match = standardCodeMap.get(code);
+                    if (match) {
+                        resolvedStandardIds.push(match.id);
+                    } else {
+                        warnings.push(`WebXam standard not found: "${code}"`);
+                    }
+                }
+            }
+
+            // ── Step 5: Build activity data object ──
+            const activityData = {
+                name: guide.contractCode + ': ' + (guide.contractBrief?.clientName ? guide.contractBrief.clientName.split('(')[0].trim() : guide.unit || 'Contract'),
+                description: guide.contractBrief?.problemStatement || '',
+                status: 'active',
+                activityType: guide.activityType || 'Contract',
+                phase: guide.phase || null,
+                scaffoldingLevel: guide.scaffoldingLevel || null,
+                classPeriods: guide.classPeriods || null,
+                unit: guide.unit || null,
+                lesson: guide.lesson || null,
+                contractCode: guide.contractCode,
+                contractBrief: guide.contractBrief || null,
+                learningGoals: guide.learningGoals || [],
+                fusionGoals: guide.fusionGoals || [],
+                requiredTools: guide.requiredTools || [],
+                requiredMaterials: guide.requiredMaterials || [],
+                resourceLinks: guide.resourceLinks || [],
+                slidesUrl: guide.slidesUrl || null,
+                getReadyTime: guide.getReadyTime || null,
+                getReadyTasks: guide.getReadyTasks || [],
+                getReadyRoleTasks: guide.getReadyRoleTasks || null,
+                conclusionQuestions: guide.conclusionQuestions || [],
+                conclusionSubmissionMethod: guide.conclusionSubmissionMethod || null,
+                assessmentQuestions: guide.assessmentQuestions || [],
+                documentationChecklist: guide.documentationChecklist || [],
+                appendixItems: guide.appendixItems || [],
+                certificationsRequired: resolvedCertsRequired,
+                certificationsAvailable: resolvedCertsAvailable,
+                portfolioPrompts: guide.portfolioPrompts || [],
+                pacingMilestones: guide.pacingMilestones || null,
+                webxamCoverage: guide.webxamCoverage || [],
+                skillsAssessed: resolvedSkillsAssessed,
+                updatedAt: timestamp,
+            };
+
+            // ── Step 6: Detect existing activity or create new ──
+            let activityId;
+            const existingActivities = excludeDeleted(await db.activities.toArray());
+            const existingMatch = existingActivities.find(a =>
+                a.contractCode && a.contractCode.toLowerCase() === guide.contractCode.toLowerCase()
+            );
+
+            if (existingMatch) {
+                // Update existing — preserve class, dates, scoring, and other manual settings
+                activityId = existingMatch.id;
+                await db.activities.update(activityId, activityData);
+                await logAction('update', 'activity', activityId, `Contract guide import: updated ${guide.contractCode}`);
+            } else {
+                // Create new — teacher sets class and dates manually afterward
+                activityData.startDate = getTodayString();
+                activityData.endDate = getTodayString();
+                activityData.classId = null;
+                activityData.createdAt = timestamp;
+                activityId = await db.activities.add(activityData);
+                await logAction('create', 'activity', activityId, `Contract guide import: created ${guide.contractCode}`);
+            }
+
+            // ── Step 7: Create/update checkpoints ──
+            let checkpointCount = 0;
+            const checkpointIdMap = {}; // Maps "C1-CP1" → database ID for portfolioPrompt linking
+
+            if (guide.checkpoints && Array.isArray(guide.checkpoints)) {
+                // Delete existing checkpoints for this activity (fresh replace)
+                const existingCps = await db.checkpoints.where('activityId').equals(activityId).toArray();
+                for (const cp of existingCps) {
+                    await db.checkpoints.delete(cp.id);
+                }
+
+                for (const cp of guide.checkpoints) {
+                    // Resolve skillsAssessable names → IDs
+                    const resolvedAssessable = [];
+                    if (cp.skillsAssessable && Array.isArray(cp.skillsAssessable)) {
+                        for (const skillName of cp.skillsAssessable) {
+                            const match = skillNameMap.get(skillName.toLowerCase());
+                            if (match) {
+                                resolvedAssessable.push(match.id);
+                            } else {
+                                warnings.push(`Checkpoint "${cp.title}": skill not found: "${skillName}"`);
+                            }
+                        }
+                    }
+
+                    // Resolve certificationDemos names → IDs
+                    const resolvedCertDemos = [];
+                    if (cp.certificationDemos && Array.isArray(cp.certificationDemos)) {
+                        for (const certName of cp.certificationDemos) {
+                            const match = toolNameMap.get(certName.toLowerCase());
+                            if (match) {
+                                resolvedCertDemos.push(match.id);
+                            } else {
+                                warnings.push(`Checkpoint "${cp.title}": equipment not found: "${certName}"`);
+                            }
+                        }
+                    }
+
+                    const cpData = {
+                        activityId,
+                        number: cp.number,
+                        title: cp.title || '',
+                        description: cp.description || '',
+                        suggestedDate: cp.suggestedDate || null,
+                        milestone: cp.milestone || '',
+                        lookFor: cp.lookFor || '',
+                        skillsAssessable: resolvedAssessable,
+                        certificationDemos: resolvedCertDemos,
+                        questions: (cp.questions || []).map(q => ({
+                            question: q.question || '',
+                            expectedResponse: q.expectedResponse || ''
+                        })),
+                        createdAt: timestamp,
+                        updatedAt: timestamp,
+                    };
+
+                    const newCpId = await db.checkpoints.add(cpData);
+                    checkpointCount++;
+
+                    // Map the JSON checkpoint ID to the database ID
+                    if (cp.id) {
+                        checkpointIdMap[cp.id] = newCpId;
+                    }
+                    checkpointIdMap[cp.number] = newCpId;
+                }
+            }
+
+            // ── Step 8: Create activitySkills junction records ──
+            // Clear existing
+            const existingSkillLinks = await db.activitySkills.where('activityId').equals(activityId).toArray();
+            for (const link of existingSkillLinks) {
+                await db.activitySkills.delete(link.id);
+            }
+            // Add resolved skills
+            for (const skillId of resolvedSkillIds) {
+                await db.activitySkills.add({
+                    activityId,
+                    skillId,
+                    updatedAt: timestamp,
+                });
+            }
+
+            // ── Step 9: Create activityStandards junction records ──
+            // Clear existing
+            const existingStdLinks = await db.activityStandards.where('activityId').equals(activityId).toArray();
+            for (const link of existingStdLinks) {
+                await db.activityStandards.delete(link.id);
+            }
+            // Add resolved standards
+            for (const standardId of resolvedStandardIds) {
+                await db.activityStandards.add({
+                    activityId,
+                    standardId,
+                    updatedAt: timestamp,
+                });
+            }
+
+            // ── Step 10: Mark dirty & report results ──
+            driveSync.markDirty();
+
+            // Build summary
+            const parts = [
+                `Imported Contract ${guide.contractCode}`,
+                existingMatch ? '(updated existing)' : '(created new)',
+                `${checkpointCount} checkpoints`,
+                `${resolvedSkillIds.length} skills linked`,
+                `${resolvedCertsRequired.length + resolvedCertsAvailable.length} certifications`,
+                `${resolvedStandardIds.length} standards linked`,
+            ];
+
+            // Clear the textarea
+            const textarea = document.getElementById('import-contract-json');
+            if (textarea) textarea.value = '';
+
+            // Show results
+            ui.showToast(parts.join(' · '), 'success', 8000);
+
+            if (warnings.length > 0) {
+                console.warn('Contract guide import warnings:', warnings);
+                setTimeout(() => {
+                    ui.showToast(`⚠️ ${warnings.length} warning(s) — check browser console for details.`, 'warning', 8000);
+                }, 1500);
+            }
+
+            console.log('Contract guide import complete:', {
+                activityId,
+                contractCode: guide.contractCode,
+                checkpoints: checkpointCount,
+                skills: resolvedSkillIds.length,
+                certifications: resolvedCertsRequired.length + resolvedCertsAvailable.length,
+                standards: resolvedStandardIds.length,
+                warnings,
+            });
+
+        } catch (error) {
+            console.error('Contract guide import error:', error);
+            ui.showToast('Import failed: ' + error.message, 'error');
+        }
+    },
 };
