@@ -217,34 +217,14 @@ pages.activityDetail = {
                     importedAt: new Date().toISOString()
                 };
 
-                // Build auto-feedback from form response feedback (RACE parsing)
+                // Build auto-feedback from form response feedback
                 let autoFeedbackParts = [];
-                let raceScores = [];
                 if (formResponses.answers && formResponses.answers.length > 0) {
                     let questionNum = 0;
                     for (const ans of formResponses.answers) {
                         if (ans.autoFeedback) {
                             questionNum++;
-                            const parsed = this.parseRaceFeedback(ans.autoFeedback);
-                            if (parsed) {
-                                // Build readable summary for this question
-                                let summary = `Q${questionNum} — ${ans.question || 'Extended Response'}:\n`;
-                                summary += `  R: ${parsed.R ?? '—'}/5`;
-                                if (parsed.comments.R) summary += ` — ${parsed.comments.R}`;
-                                summary += `\n  A: ${parsed.A ?? '—'}/5`;
-                                if (parsed.comments.A) summary += ` — ${parsed.comments.A}`;
-                                summary += `\n  C: ${parsed.C ?? '—'}/5`;
-                                if (parsed.comments.C) summary += ` — ${parsed.comments.C}`;
-                                summary += `\n  E: ${parsed.E ?? '—'}/5`;
-                                if (parsed.comments.E) summary += ` — ${parsed.comments.E}`;
-                                summary += `\n  Total: ${parsed.total}/${parsed.maxTotal}`;
-                                if (parsed.feedbackText) summary += `\n  ${parsed.feedbackText}`;
-                                autoFeedbackParts.push(summary);
-                                raceScores.push({ question: questionNum, ...parsed });
-                            } else {
-                                // Non-RACE feedback — include it as-is
-                                autoFeedbackParts.push(`Q${questionNum} — ${ans.question || 'Question'}:\n  ${ans.autoFeedback}`);
-                            }
+                            autoFeedbackParts.push(`Q${questionNum} — ${ans.question || 'Question'}:\n  ${ans.autoFeedback}`);
                         }
                     }
                 }
@@ -279,7 +259,6 @@ pages.activityDetail = {
                         updatedAt: new Date().toISOString()
                     };
                     if (combinedFeedback !== null) updates.feedback = combinedFeedback;
-                    if (raceScores.length > 0) updates.raceScores = raceScores;
                     if (['not-started', 'in-progress'].includes(existing.status)) {
                         updates.status = 'submitted';
                         updates.submittedAt = sub.timestamp || new Date().toISOString();
@@ -297,7 +276,6 @@ pages.activityDetail = {
                         updatedAt: new Date().toISOString()
                     };
                     if (combinedFeedback !== null) newSub.feedback = combinedFeedback;
-                    if (raceScores.length > 0) newSub.raceScores = raceScores;
                     await db.submissions.add(newSub);
                     matched++;
                 }
@@ -306,10 +284,7 @@ pages.activityDetail = {
             let msg = `✅ Updated ${matched} submission(s) from form responses`;
             if (unmatched > 0) msg += ` (${unmatched} unmatched emails)`;
             ui.showToast(msg, matched > 0 ? 'success' : 'info', 5000);
-
-            // Auto-map form scores to rubric if applicable
-            const rubricMapped = await this.autoMapFormScoresToRubric(activity.id);
-            if (rubricMapped > 0) msg += ` | ${rubricMapped} rubric(s) auto-scored`;
+            
             // Refresh the page
             this.render(state.selectedActivity);
 
@@ -819,35 +794,7 @@ pages.activityDetail = {
             return;
         }
 
-        // Checkpoint grade breakdown (6.6)
         let cpBreakdownHtml = '';
-        if ((activity.checkpointGradeWeight || 0) > 0 && checkpoints.length > 0) {
-            cpBreakdownHtml = '<details style="background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-base); margin-bottom: var(--space-base);">';
-            cpBreakdownHtml += '<summary style="cursor: pointer; font-weight: 600; font-size: var(--font-size-body-small); user-select: none;">📊 Blended Grade Breakdown (Checkpoints: ' + activity.checkpointGradeWeight + '% | Assignment: ' + (100 - activity.checkpointGradeWeight) + '%)</summary>';
-            cpBreakdownHtml += '<table style="width: 100%; border-collapse: collapse; font-size: var(--font-size-body-small);">';
-            cpBreakdownHtml += '<thead><tr><th style="text-align: left; padding: 4px 8px;">Student</th><th style="text-align: center; padding: 4px 8px;">Checkpoints</th><th style="text-align: center; padding: 4px 8px;">Assignment</th><th style="text-align: center; padding: 4px 8px; font-weight: 700;">Final</th></tr></thead><tbody>';
-
-            students.forEach(function(student) {
-                const sub = submissionMap.get(student.id);
-                const result = calculateFinalGrade(activity, student.id, sub, checkpoints, allCompletions);
-
-                const cpPct = Math.round(result.cpScore * 100);
-                const assignPct = Math.round(result.assignmentScore * 100);
-                const finalPct = Math.round(result.finalScore * 100);
-
-                const cpContrib = Math.round(result.cpScore * result.cpWeight * 100);
-                const assignContrib = Math.round(result.assignmentScore * result.assignmentWeight * 100);
-
-                cpBreakdownHtml += '<tr style="border-bottom: 1px solid var(--color-border);">';
-                cpBreakdownHtml += '<td style="padding: 4px 8px;">' + escapeHtml(displayName(student)) + '</td>';
-                cpBreakdownHtml += '<td style="text-align: center; padding: 4px 8px; color: var(--color-text-secondary);">' + cpPct + '% → ' + cpContrib + '%</td>';
-                cpBreakdownHtml += '<td style="text-align: center; padding: 4px 8px; color: var(--color-text-secondary);">' + assignPct + '% → ' + assignContrib + '%</td>';
-                cpBreakdownHtml += '<td style="text-align: center; padding: 4px 8px; font-weight: 700;">' + finalPct + '%</td>';
-                cpBreakdownHtml += '</tr>';
-            });
-
-            cpBreakdownHtml += '</tbody></table></details>';
-        }
 
         // Query which students already received feedback today (for per-student send buttons)
         const todayStr = getTodayString();
@@ -885,12 +832,7 @@ pages.activityDetail = {
         } else {
             this.renderCompleteIncompleteGrading(container, activity, students, submissionMap, showSendBtns, sentToday);
         }
-
-        // Prepend checkpoint breakdown above the grading cards
-        if (cpBreakdownHtml) {
-            container.innerHTML = cpBreakdownHtml + container.innerHTML;
-        }
-
+        
         // Show/hide Send All Feedback button
         const feedbackBtn = document.getElementById('send-feedback-btn');
         if (feedbackBtn) {
@@ -977,20 +919,7 @@ pages.activityDetail = {
                             onclick="pages.activityDetail.sendStudentFeedback(${activity.id}, ${student.id})"
                             ${sentTodayCI ? 'disabled' : (!hasFbCI ? 'disabled' : '')}>${sentTodayCI ? '✓ Sent' : '✉ Send'}</button>
                     </div>` : ''}
-                    ${(() => {
-                        const meCI = (sub?.raceScores || []).find(e => e.question === 'Manual Entry');
-                        return `<details style="margin-top: var(--space-xs);">
-                            <summary style="cursor: pointer; font-size: var(--font-size-body-small); font-weight: 600; color: var(--color-text-secondary); user-select: none;">✏️ RACE Scores</summary>
-                            <div style="display: flex; gap: var(--space-sm); align-items: center; margin-top: var(--space-xs); flex-wrap: wrap;">
-                                <label style="font-size: var(--font-size-body-small);">R <input type="number" min="0" max="5" step="1" id="race-r-${student.id}" value="${meCI?.R ?? ''}" style="width: 50px; padding: 2px 4px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); text-align: center;"></label>
-                                <label style="font-size: var(--font-size-body-small);">A <input type="number" min="0" max="5" step="1" id="race-a-${student.id}" value="${meCI?.A ?? ''}" style="width: 50px; padding: 2px 4px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); text-align: center;"></label>
-                                <label style="font-size: var(--font-size-body-small);">C <input type="number" min="0" max="5" step="1" id="race-c-${student.id}" value="${meCI?.C ?? ''}" style="width: 50px; padding: 2px 4px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); text-align: center;"></label>
-                                <label style="font-size: var(--font-size-body-small);">E <input type="number" min="0" max="5" step="1" id="race-e-${student.id}" value="${meCI?.E ?? ''}" style="width: 50px; padding: 2px 4px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); text-align: center;"></label>
-                                <button class="btn btn--primary" style="font-size: 11px; padding: 4px 10px;" onclick="pages.activityDetail.saveRaceScores(${activity.id}, ${student.id})">Save RACE Scores</button>
-                            </div>
-                        </details>`;
-                    })()}
-                </td>
+                    </td>
             </tr>`;
 
             // Form responses expandable row
@@ -1075,20 +1004,7 @@ pages.activityDetail = {
                             onclick="pages.activityDetail.sendStudentFeedback(${activity.id}, ${student.id})"
                             ${sentTodayPts ? 'disabled' : (!hasFbPts ? 'disabled' : '')}>${sentTodayPts ? '✓ Sent' : '✉ Send'}</button>
                     </div>` : ''}
-                    ${(() => {
-                        const mePts = (sub?.raceScores || []).find(e => e.question === 'Manual Entry');
-                        return `<details style="margin-top: var(--space-xs);">
-                            <summary style="cursor: pointer; font-size: var(--font-size-body-small); font-weight: 600; color: var(--color-text-secondary); user-select: none;">✏️ RACE Scores</summary>
-                            <div style="display: flex; gap: var(--space-sm); align-items: center; margin-top: var(--space-xs); flex-wrap: wrap;">
-                                <label style="font-size: var(--font-size-body-small);">R <input type="number" min="0" max="5" step="1" id="race-r-${student.id}" value="${mePts?.R ?? ''}" style="width: 50px; padding: 2px 4px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); text-align: center;"></label>
-                                <label style="font-size: var(--font-size-body-small);">A <input type="number" min="0" max="5" step="1" id="race-a-${student.id}" value="${mePts?.A ?? ''}" style="width: 50px; padding: 2px 4px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); text-align: center;"></label>
-                                <label style="font-size: var(--font-size-body-small);">C <input type="number" min="0" max="5" step="1" id="race-c-${student.id}" value="${mePts?.C ?? ''}" style="width: 50px; padding: 2px 4px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); text-align: center;"></label>
-                                <label style="font-size: var(--font-size-body-small);">E <input type="number" min="0" max="5" step="1" id="race-e-${student.id}" value="${mePts?.E ?? ''}" style="width: 50px; padding: 2px 4px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); text-align: center;"></label>
-                                <button class="btn btn--primary" style="font-size: 11px; padding: 4px 10px;" onclick="pages.activityDetail.saveRaceScores(${activity.id}, ${student.id})">Save RACE Scores</button>
-                            </div>
-                        </details>`;
-                    })()}
-                </td>
+                    </td>
             </tr>`;
 
             // Form responses expandable row
@@ -1430,31 +1346,6 @@ pages.activityDetail = {
 
                 html += `</div>`; // close .mastery-obs-section
 
-            } else if (linkedSkills.length > 0) {
-                // ====== LEGACY MODE: Skill Assessment (not graded) ======
-                html += `<div style="margin-top: var(--space-sm); padding-top: var(--space-sm); border-top: 2px dashed var(--color-border);">
-                    <table style="width: 100%; border-collapse: collapse; font-size: var(--font-size-body-small);">
-                    <thead><tr>
-                        <th style="text-align: left; padding: 4px; border-bottom: 1px solid var(--color-border); color: var(--color-info);">Skill Assessment <span style="font-weight: normal; font-style: italic;">(not graded)</span></th>
-                        ${skillLevels.map(l => `<th style="text-align: center; padding: 4px; border-bottom: 1px solid var(--color-border); color: var(--color-info);">${escapeHtml(l)}</th>`).join('')}
-                    </tr></thead><tbody>`;
-
-                linkedSkills.forEach(skill => {
-                    const selected = studentSkillScores[String(skill.id)] || '';
-                    html += `<tr><td style="padding: 4px; border-bottom: 1px solid var(--color-border); font-weight: 500;">${escapeHtml(skill.name)}</td>`;
-                    skillLevels.forEach(level => {
-                        const isSelected = selected === level;
-                        const skillColor = '#3b82f6';
-                        html += `<td style="text-align: center; padding: 4px; border-bottom: 1px solid var(--color-border);">
-                            <button onclick="pages.activityDetail.saveSkillScore(${activity.id}, ${student.id}, ${skill.id}, '${escapeHtml(level)}')"
-                                style="width: 32px; height: 32px; border-radius: var(--radius-circle); border: 2px solid ${isSelected ? skillColor : 'var(--color-border)'}; background: ${isSelected ? skillColor : 'var(--color-background)'}; color: ${isSelected ? 'white' : 'var(--color-text-tertiary)'}; cursor: pointer; font-size: 12px; font-weight: 600;">
-                                ${isSelected ? '✓' : ''}
-                            </button>
-                        </td>`;
-                    });
-                    html += '</tr>';
-                });
-                html += '</tbody></table></div>';
             }
 
             // --- Form Responses (expandable) ---
@@ -1494,20 +1385,7 @@ pages.activityDetail = {
                         onclick="pages.activityDetail.sendStudentFeedback(${activity.id}, ${student.id})"
                         ${sentTodayRub ? 'disabled' : (!hasFbRub ? 'disabled' : '')}>${sentTodayRub ? '✓ Sent' : '✉ Send'}</button>
                 </div>` : ''}
-                ${(() => {
-                    const meRub = (sub?.raceScores || []).find(e => e.question === 'Manual Entry');
-                    return `<details style="margin-top: var(--space-xs);">
-                        <summary style="cursor: pointer; font-size: var(--font-size-body-small); font-weight: 600; color: var(--color-text-secondary); user-select: none;">✏️ RACE Scores</summary>
-                        <div style="display: flex; gap: var(--space-sm); align-items: center; margin-top: var(--space-xs); flex-wrap: wrap;">
-                            <label style="font-size: var(--font-size-body-small);">R <input type="number" min="0" max="5" step="1" id="race-r-${student.id}" value="${meRub?.R ?? ''}" style="width: 50px; padding: 2px 4px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); text-align: center;"></label>
-                            <label style="font-size: var(--font-size-body-small);">A <input type="number" min="0" max="5" step="1" id="race-a-${student.id}" value="${meRub?.A ?? ''}" style="width: 50px; padding: 2px 4px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); text-align: center;"></label>
-                            <label style="font-size: var(--font-size-body-small);">C <input type="number" min="0" max="5" step="1" id="race-c-${student.id}" value="${meRub?.C ?? ''}" style="width: 50px; padding: 2px 4px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); text-align: center;"></label>
-                            <label style="font-size: var(--font-size-body-small);">E <input type="number" min="0" max="5" step="1" id="race-e-${student.id}" value="${meRub?.E ?? ''}" style="width: 50px; padding: 2px 4px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); text-align: center;"></label>
-                            <button class="btn btn--primary" style="font-size: 11px; padding: 4px 10px;" onclick="pages.activityDetail.saveRaceScores(${activity.id}, ${student.id})">Save RACE Scores</button>
-                        </div>
-                    </details>`;
-                })()}
-            </div>`;
+                </div>`;
 
             html += '</div></details>';
         });
@@ -1561,73 +1439,7 @@ pages.activityDetail = {
             ui.showToast('Failed to save', 'error');
         }
     },
-
-    parseRaceFeedback: function(feedbackText) {
-        if (!feedbackText) return null;
-
-        const result = {
-            R: null, A: null, C: null, E: null,
-            total: null, maxTotal: null,
-            comments: {}
-        };
-
-        const lines = feedbackText.split('\n');
-        const feedbackLines = [];
-        let pastScores = false;
-
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed) continue;
-
-            // Try to match a RACE score line
-            // Handles: "R (Restate): 5/5 - comment", "R: 5/5 - comment", "Restate: 5/5 - comment"
-            const scoreMatch = trimmed.match(
-                /^(?:(R|A|C|E)\s*(?:\([^)]*\))?|Restate|Answer|Cite(?:\/Prove)?|Explain(?:\/Examples)?)\s*:\s*(\d+)\s*\/\s*(\d+)(?:\s*[-–—]\s*(.*))?/i
-            );
-
-            if (scoreMatch) {
-                // Figure out which RACE letter this is
-                let letter = scoreMatch[1] ? scoreMatch[1].toUpperCase() : null;
-                if (!letter) {
-                    const word = trimmed.split(/\s*:/)[0].trim().toLowerCase();
-                    if (word.startsWith('r')) letter = 'R';
-                    else if (word.startsWith('a')) letter = 'A';
-                    else if (word.startsWith('c')) letter = 'C';
-                    else if (word.startsWith('e')) letter = 'E';
-                }
-
-                if (letter && 'RACE'.includes(letter)) {
-                    result[letter] = parseInt(scoreMatch[2]);
-                    result.comments[letter] = scoreMatch[4] ? scoreMatch[4].trim() : '';
-                }
-            } else if (trimmed.match(/^Total\s*(Score)?\s*:/i)) {
-                // Skip total score lines — we'll calculate it ourselves
-            } else if (trimmed.match(/^Feedback\s*:/i)) {
-                // "Feedback:" label line — everything after is the paragraph
-                const afterLabel = trimmed.replace(/^Feedback\s*:\s*/i, '');
-                if (afterLabel) feedbackLines.push(afterLabel);
-                pastScores = true;
-            } else if (result.R !== null) {
-                // We've already seen at least one score, so this is feedback text
-                pastScores = true;
-                feedbackLines.push(trimmed);
-            }
-        }
-
-        // Only return a result if we found at least one RACE score
-        if (result.R === null && result.A === null && result.C === null && result.E === null) {
-            return null;
-        }
-
-        // Calculate totals from what we found
-        const scored = ['R', 'A', 'C', 'E'].filter(l => result[l] !== null);
-        result.total = scored.reduce((sum, l) => sum + result[l], 0);
-        result.maxTotal = scored.length * 5;
-        result.feedbackText = feedbackLines.join(' ').trim();
-
-        return result;
-    },
-
+    
     saveFeedback: async function(activityId, studentId, feedbackText) {
         try {
             const existing = await db.submissions
@@ -1639,24 +1451,6 @@ pages.activityDetail = {
                 feedback: feedbackText,
                 updatedAt: new Date().toISOString()
             };
-
-            // Parse RACE scores from feedback text
-            const parsed = this.parseRaceFeedback(feedbackText);
-            if (parsed && (parsed.R !== null || parsed.A !== null || parsed.C !== null || parsed.E !== null)) {
-                const existingRace = (existing?.raceScores || []).filter(e => e.question !== 'Manual Feedback');
-                existingRace.push({ question: 'Manual Feedback', ...parsed });
-                updateData.raceScores = existingRace;
-
-                // Auto-populate the RACE number inputs on screen
-                const rI = document.getElementById(`race-r-${studentId}`);
-                const aI = document.getElementById(`race-a-${studentId}`);
-                const cI = document.getElementById(`race-c-${studentId}`);
-                const eI = document.getElementById(`race-e-${studentId}`);
-                if (rI && parsed.R !== null) rI.value = parsed.R;
-                if (aI && parsed.A !== null) aI.value = parsed.A;
-                if (cI && parsed.C !== null) cI.value = parsed.C;
-                if (eI && parsed.E !== null) eI.value = parsed.E;
-            }
 
             if (existing) {
                 await db.submissions.update(existing.id, updateData);
@@ -1675,58 +1469,7 @@ pages.activityDetail = {
             ui.showToast('Failed to save feedback', 'error');
         }
     },
-
-    saveRaceScores: async function(activityId, studentId) {
-        try {
-            const r = parseInt(document.getElementById(`race-r-${studentId}`)?.value) || 0;
-            const a = parseInt(document.getElementById(`race-a-${studentId}`)?.value) || 0;
-            const c = parseInt(document.getElementById(`race-c-${studentId}`)?.value) || 0;
-            const e = parseInt(document.getElementById(`race-e-${studentId}`)?.value) || 0;
-
-            const scored = [r, a, c, e].filter(v => !isNaN(v));
-            const total = scored.reduce((sum, v) => sum + v, 0);
-            const maxTotal = scored.length * 5;
-
-            const entry = {
-                question: 'Manual Entry',
-                R: r, A: a, C: c, E: e,
-                total: total,
-                maxTotal: maxTotal,
-                comments: {},
-                feedbackText: ''
-            };
-
-            const existing = await db.submissions
-                .where('activityId').equals(activityId)
-                .filter(s => s.studentId === studentId)
-                .first();
-
-            const existingRace = (existing?.raceScores || []).filter(e => e.question !== 'Manual Entry');
-            existingRace.push(entry);
-
-            if (existing) {
-                await db.submissions.update(existing.id, {
-                    raceScores: existingRace,
-                    updatedAt: new Date().toISOString()
-                });
-            } else {
-                await db.submissions.add({
-                    activityId: activityId,
-                    studentId: studentId,
-                    status: 'not-started',
-                    raceScores: existingRace,
-                    submittedAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString()
-                });
-            }
-            driveSync.markDirty();
-            ui.showToast('RACE scores saved', 'success');
-        } catch (err) {
-            console.error('Error saving RACE scores:', err);
-            ui.showToast('Failed to save RACE scores', 'error');
-        }
-    },
-
+    
     showAttemptHistory: async function(activityId, studentId, evt) {
         const containerId = `attempt-history-${studentId}`;
         const existing = document.getElementById(containerId);
@@ -2407,133 +2150,7 @@ pages.activityDetail = {
             ui.showToast('Failed to save mapping', 'error');
         }
     },
-
-    autoMapFormScoresToRubric: async function(activityId) {
-        try {
-            const activity = await db.activities.get(activityId);
-            if (!activity || activity.scoringType !== 'rubric') return 0;
-            if (!activity.rubric || !activity.rubric.criteria || !activity.rubric.levels) return 0;
-
-            const criteria = activity.rubric.criteria;
-            const levels = activity.rubric.levels; // e.g., ['5', '4', '3', '2', '1']
-
-            // Check if mapping is configured
-            const hasMappings = criteria.some(c => c.formQuestionFrom != null);
-            if (!hasMappings) return 0;
-
-            // Parse levels as numbers for comparison, keep originals for storage
-            const levelNums = levels.map(l => parseFloat(l)).filter(n => !isNaN(n));
-            const isNumericLevels = levelNums.length === levels.length;
-
-            const submissions = await db.submissions
-                .where('activityId').equals(activityId)
-                .toArray();
-
-            let mapped = 0;
-            for (const sub of submissions) {
-                if (!sub.formResponses || !sub.formResponses.answers) continue;
-
-                const existingScores = sub.rubricScores || {};
-                // Don't skip already-scored — re-evaluate if form data might have higher scores
-
-                const answers = sub.formResponses.answers;
-                const newScores = { ...existingScores };
-                let anyMapped = false;
-
-                for (const criterion of criteria) {
-                    if (criterion.formQuestionFrom == null || criterion.formQuestionTo == null) continue;
-
-                    const from = criterion.formQuestionFrom - 1;
-                    const to = criterion.formQuestionTo - 1;
-                    if (from < 0 || to < 0 || from >= answers.length) continue;
-
-                    let totalScore = 0;
-                    let hasAnyScore = false;
-                    for (let i = from; i <= to && i < answers.length; i++) {
-                        if (answers[i].score != null) {
-                            totalScore += answers[i].score;
-                            hasAnyScore = true;
-                        }
-                    }
-
-                    if (!hasAnyScore) continue;
-
-                    // Find the matching level for this score
-                    let newLevelValue = null;
-                    if (isNumericLevels) {
-                        let bestLevel = levels[levels.length - 1];
-                        let bestDiff = Infinity;
-                        for (let i = 0; i < levels.length; i++) {
-                            const diff = Math.abs(levelNums[i] - totalScore);
-                            if (diff < bestDiff) {
-                                bestDiff = diff;
-                                bestLevel = levels[i];
-                            }
-                        }
-                        newLevelValue = bestLevel;
-                    } else {
-                        const pct = totalScore / (totalMax || 1);
-                        let levelIndex;
-                        if (levels.length === 4) {
-                            if (pct >= 0.9) levelIndex = 0;
-                            else if (pct >= 0.7) levelIndex = 1;
-                            else if (pct >= 0.5) levelIndex = 2;
-                            else levelIndex = 3;
-                        } else if (levels.length === 3) {
-                            if (pct >= 0.8) levelIndex = 0;
-                            else if (pct >= 0.5) levelIndex = 1;
-                            else levelIndex = 2;
-                        } else if (levels.length === 2) {
-                            levelIndex = pct >= 0.7 ? 0 : 1;
-                        } else {
-                            levelIndex = Math.min(levels.length - 1, Math.floor((1 - pct) * levels.length));
-                        }
-                        newLevelValue = levels[levelIndex];
-                    }
-
-                    if (!newLevelValue) continue;
-
-                    // Only overwrite if no existing score OR new score is higher
-                    const existingLevel = newScores[criterion.name];
-                    if (existingLevel) {
-                        const existingNum = parseFloat(existingLevel);
-                        const newNum = parseFloat(newLevelValue);
-                        if (!isNaN(existingNum) && !isNaN(newNum)) {
-                            if (newNum <= existingNum) continue; // keep existing higher score
-                        }
-                    }
-
-                    newScores[criterion.name] = newLevelValue;
-                    anyMapped = true;
-                }
-
-                if (anyMapped) {
-                    const allScored = criteria.every(c => newScores[c.name]);
-                    const newStatus = allScored ? 'graded' : sub.status;
-                    const updateData = {
-                        rubricScores: newScores,
-                        status: newStatus,
-                        updatedAt: new Date().toISOString()
-                    };
-                    // Sprint 13.5: Set gradedAt when auto-map completes grading
-                    if (newStatus === 'graded' && sub.status !== 'graded') {
-                        updateData.gradedAt = new Date().toISOString();
-                    }
-                    await db.submissions.update(sub.id, updateData);
-                    mapped++;
-                }
-            }
-
-            if (mapped > 0) {
-                console.log(`📊 Auto-mapped rubric scores for ${mapped} student(s) on "${activity.name}"`);
-            }
-            return mapped;
-        } catch (err) {
-            console.error('Auto-map rubric scores failed:', err);
-            return 0;
-        }
-    },
-
+    
     saveSkillObservation: async function(activityId, studentId, skillId) {
         try {
             // Read selected rating from the button group
@@ -2663,49 +2280,5 @@ pages.activityDetail = {
             ui.showToast('Failed to save', 'error');
         }
     },
-
-    saveSkillScore: async function(activityId, studentId, skillId, level) {
-        try {
-            const existing = await db.submissions
-                .where('activityId').equals(activityId)
-                .filter(s => s.studentId === studentId)
-                .first();
-
-            let skillScores = existing?.skillScores || {};
-            const key = String(skillId);
-            // Toggle: if already selected, deselect
-            if (skillScores[key] === level) {
-                delete skillScores[key];
-            } else {
-                skillScores[key] = level;
-            }
-
-            const data = {
-                activityId: activityId,
-                studentId: studentId,
-                skillScores: skillScores,
-                status: existing?.status || 'in-progress',
-                rubricScores: existing?.rubricScores || {},
-                score: existing?.score || null,
-                feedback: existing?.feedback || '',
-                updatedAt: new Date().toISOString()
-            };
-
-            if (existing) {
-                await db.submissions.update(existing.id, data);
-            } else {
-                data.submittedAt = new Date().toISOString();
-                await db.submissions.add(data);
-            }
-            driveSync.markDirty();
-            // Re-render
-            const activity = await db.activities.get(activityId);
-            const allStudents = this._data?.allStudents || [];
-            this.renderSubmissions(activity, allStudents);
-
-        } catch (err) {
-            console.error('Error saving skill score:', err);
-            ui.showToast('Failed to save', 'error');
-        }
-    },
+    
 };
