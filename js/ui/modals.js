@@ -598,31 +598,6 @@ const modals = {
             classSelect.appendChild(option);
         });
 
-        // Populate assignment type dropdown
-        const typeSelect = document.getElementById('activity-type-select');
-        typeSelect.innerHTML = '<option value="">No template (manual setup)</option>';
-        const allTypes = await db.assignmentTypes.toArray();
-        activeClasses.forEach(cls => {
-            const classTypes = allTypes.filter(t => t.classId === cls.id);
-            if (classTypes.length > 0) {
-                const group = document.createElement('optgroup');
-                group.label = cls.name;
-                classTypes.forEach(type => {
-                    const opt = document.createElement('option');
-                    opt.value = type.id;
-                    opt.textContent = type.name;
-                    group.appendChild(opt);
-                });
-                typeSelect.appendChild(group);
-            }
-        });
-
-        // Clear any stored type data
-        typeSelect.dataset.scoringType = '';
-        typeSelect.dataset.targetType = '';
-        typeSelect.dataset.defaultPoints = '';
-        typeSelect.dataset.rubric = '';
-
         // Populate standards checkboxes
         const standardsContainer = document.getElementById('activity-standards-checkboxes');
         const allStandards = await db.standards.toArray();
@@ -673,13 +648,8 @@ const modals = {
         if (!activity) return;
 
         document.getElementById('quick-edit-name').textContent = activity.name;
-        document.getElementById('qe-scoring-type').value = activity.scoringType || 'complete-incomplete';
-        document.getElementById('qe-points').value = activity.defaultPoints || '';
         document.getElementById('qe-start-date').value = activity.startDate || '';
         document.getElementById('qe-end-date').value = activity.endDate || '';
-
-        // Total Points is always visible regardless of scoring type
-        document.getElementById('qe-points-group').style.display = '';
 
         ui.showModal('modal-quick-edit');
     },
@@ -697,8 +667,6 @@ const modals = {
         if (!activity) return;
 
         const updates = {
-            scoringType: document.getElementById('qe-scoring-type').value,
-            defaultPoints: parseInt(document.getElementById('qe-points').value) || null,
             startDate: document.getElementById('qe-start-date').value,
             endDate: document.getElementById('qe-end-date').value,
             updatedAt: new Date().toISOString()
@@ -745,39 +713,6 @@ const modals = {
                 document.getElementById('activity-start-date').value = activity.startDate;
                 document.getElementById('activity-end-date').value = activity.endDate;
                 
-                // Populate scoring fields
-                document.getElementById('activity-scoring-type').value = activity.scoringType || 'complete-incomplete';
-                modals.toggleActivityScoringFields();
-                if (activity.scoringType === 'points') {
-                    document.getElementById('activity-points').value = activity.defaultPoints || '';
-                }
-                if (activity.scoringType === 'rubric' && activity.rubric) {
-                    document.getElementById('activity-rubric-levels').value = (activity.rubric.levels || []).join(', ');
-                    document.getElementById('activity-rubric-criteria').innerHTML = '';
-                    (activity.rubric.criteria || []).forEach(c => modals.addActivityRubricCriterion(c.name));
-                }
-
-                // Populate type dropdown
-                const typeSelect = document.getElementById('activity-type-select');
-                typeSelect.innerHTML = '<option value="">No template</option>';
-                const allTypes = await db.assignmentTypes.toArray();
-                const activeClasses2 = (await db.classes.toArray()).filter(c => c.status !== 'archived');
-                activeClasses2.forEach(cls => {
-                    const classTypes = allTypes.filter(t => t.classId === cls.id);
-                    if (classTypes.length > 0) {
-                        const group = document.createElement('optgroup');
-                        group.label = cls.name;
-                        classTypes.forEach(type => {
-                            const opt = document.createElement('option');
-                            opt.value = type.id;
-                            opt.textContent = type.name;
-                            group.appendChild(opt);
-                        });
-                        typeSelect.appendChild(group);
-                    }
-                });
-                typeSelect.value = activity.assignmentTypeId || '';
-
                 // Populate and check standards
                 const standardsContainer = document.getElementById('activity-standards-checkboxes');
                 const allStandards = await db.standards.toArray();
@@ -842,12 +777,6 @@ const modals = {
                 // Store existing links so saveActivity() can preserve them
                 state._classroomLinksTemp = activity.classroomLinks || {};
                 state._classroomPendingCreate = {};
-                // Populate checkpoint grading fields (6.6)
-                document.getElementById('activity-cp-weight').value = activity.checkpointGradeWeight || 0;
-                document.getElementById('cp-weight-display').textContent = (activity.checkpointGradeWeight || 0) + '%';
-                const modeRadios = document.querySelectorAll('input[name="cp-grade-mode"]');
-                modeRadios.forEach(function(r) { r.checked = (r.value === (activity.checkpointGradeMode || 'completion')); });
-
                 // Show linked courses count if any exist
                 const linkCount = Object.keys(state._classroomLinksTemp).length;
                 if (linkCount > 0) {
@@ -866,24 +795,6 @@ const modals = {
             console.error('Error loading activity:', error);
             ui.showToast('Failed to load activity', 'error');
         }
-    },
-
-    toggleActivityScoringFields: function() {
-        const scoring = document.getElementById('activity-scoring-type').value;
-        // Total Points is always visible — it's the Classroom max-points value for every scoring type
-        document.getElementById('activity-points-group').style.display = '';
-        document.getElementById('activity-rubric-group').style.display = scoring === 'rubric' ? '' : 'none';
-    },
-
-    addActivityRubricCriterion: function(name = '') {
-        const container = document.getElementById('activity-rubric-criteria');
-        const div = document.createElement('div');
-        div.style.cssText = 'display: flex; gap: var(--space-sm); align-items: center; margin-bottom: var(--space-xs);';
-        div.innerHTML = `
-            <input type="text" class="form-input activity-rubric-criterion-name" placeholder="Criterion name" value="${escapeHtml(name)}" style="flex: 1;">
-            <button type="button" class="btn btn--icon" onclick="this.parentElement.remove()" style="color: var(--color-error);">✕</button>
-        `;
-        container.appendChild(div);
     },
 
     loadClassroomCourses: async function() {
@@ -1114,60 +1025,6 @@ const modals = {
         }
     },
 
-    applyAssignmentType: async function() {
-        const typeId = parseInt(document.getElementById('activity-type-select').value);
-        if (!typeId) return;
-
-        const type = await db.assignmentTypes.get(typeId);
-        if (!type) return;
-
-        // Auto-fill class
-        const classSelect = document.getElementById('activity-class-id');
-        if (type.classId) classSelect.value = type.classId;
-
-        // Auto-fill start date to today if empty
-        const startInput = document.getElementById('activity-start-date');
-        if (!startInput.value) {
-            const today = new Date();
-            startInput.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-        }
-
-        // Auto-fill end date from duration
-        if (type.defaultDurationDays && startInput.value) {
-            const start = new Date(startInput.value + 'T00:00:00');
-            const end = new Date(start);
-            end.setDate(end.getDate() + type.defaultDurationDays);
-            document.getElementById('activity-end-date').value = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
-        }
-
-        // Auto-fill checkpoints from template
-        if (type.checkpointTemplates && type.checkpointTemplates.length > 0) {
-            document.getElementById('checkpoints-list').innerHTML = '';
-            type.checkpointTemplates.forEach(cp => {
-                this.addCheckpointField(cp.title, cp.questions || '', '');
-            });
-        }
-
-        // Store the type info on the activity for later use (scoring, rubric)
-        document.getElementById('activity-type-select').dataset.scoringType = type.scoringType || '';
-        document.getElementById('activity-type-select').dataset.targetType = type.targetType || '';
-        document.getElementById('activity-type-select').dataset.defaultPoints = type.defaultPoints || '';
-        document.getElementById('activity-type-select').dataset.rubric = type.defaultRubric ? JSON.stringify(type.defaultRubric) : '';
-
-        // Auto-fill scoring fields
-        document.getElementById('activity-scoring-type').value = type.scoringType || 'complete-incomplete';
-        this.toggleActivityScoringFields();
-        if (type.scoringType === 'points') {
-            document.getElementById('activity-points').value = type.defaultPoints || '';
-        }
-        if (type.scoringType === 'rubric' && type.defaultRubric) {
-            document.getElementById('activity-rubric-levels').value = (type.defaultRubric.levels || []).join(', ');
-            document.getElementById('activity-rubric-criteria').innerHTML = '';
-            (type.defaultRubric.criteria || []).forEach(c => this.addActivityRubricCriterion(c.name));
-        }
-        ui.showToast(`Applied "${type.name}" template — checkpoints and dates auto-filled`, 'success');
-    },
-
     hideActivityModal: function() {
         ui.hideModal('modal-activity');
         document.getElementById('activity-form').reset();
@@ -1299,29 +1156,6 @@ const modals = {
         }
 
         try {
-            const typeSelect = document.getElementById('activity-type-select');
-            const scoringType = document.getElementById('activity-scoring-type').value || typeSelect.dataset.scoringType || 'complete-incomplete';
-            
-            // Build rubric from manual fields if rubric scoring is selected
-            let rubric = null;
-            if (scoringType === 'rubric') {
-                if (typeSelect.dataset.rubric) {
-                    rubric = JSON.parse(typeSelect.dataset.rubric);
-                }
-                // Override with manual fields if they have content
-                const manualLevels = document.getElementById('activity-rubric-levels').value;
-                const manualCriteria = document.querySelectorAll('.activity-rubric-criterion-name');
-                if (manualLevels && manualCriteria.length > 0) {
-                    const levels = manualLevels.split(',').map(l => l.trim()).filter(l => l);
-                    const criteria = Array.from(manualCriteria)
-                        .map(input => ({ name: input.value.trim(), descriptions: levels.map(() => '') }))
-                        .filter(c => c.name);
-                    if (levels.length > 0 && criteria.length > 0) {
-                        rubric = { levels, criteria };
-                    }
-                }
-            }
-
             const activityData = {
                 name: name,
                 description: description,
@@ -1329,13 +1163,7 @@ const modals = {
                 startDate: startDate,
                 endDate: endDate,
                 status: 'active',
-                assignmentTypeId: parseInt(typeSelect.value) || null,
-                scoringType: scoringType,
-                targetType: typeSelect.dataset.targetType || document.getElementById('activity-scoring-type').closest('form')?.querySelector('#atype-target')?.value || 'team',
-                defaultPoints: parseInt(document.getElementById('activity-points').value) || parseInt(typeSelect.dataset.defaultPoints) || null,
-                rubric: rubric,
-                checkpointGradeWeight: parseInt(document.getElementById('activity-cp-weight').value) || 0,
-                checkpointGradeMode: document.querySelector('input[name="cp-grade-mode"]:checked')?.value || 'completion',
+                scoringType: 'mastery',
                 formUrl: document.getElementById('activity-form-url').value.trim() || null,
                 formSpreadsheetId: document.getElementById('activity-form-spreadsheet').value.trim() || null,
                 classroomLinks: (function() {
