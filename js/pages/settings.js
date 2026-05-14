@@ -954,16 +954,6 @@ pages.settings = {
                 headers.push(`${safeName}: Feedback Sent`);
             });
 
-            const hasRaceData = allSubmissions.some(s => s.raceScores && s.raceScores.length > 0);
-            if (hasRaceData) {
-                headers.push('RACE: Avg R (Restate)');
-                headers.push('RACE: Avg A (Answer)');
-                headers.push('RACE: Avg C (Cite)');
-                headers.push('RACE: Avg E (Explain)');
-                headers.push('RACE: Avg Total');
-                headers.push('RACE: Assignments Scored');
-            }
-
             skills.forEach(s => {
                 headers.push(`Skill: ${(s.name || '').replace(/,/g, ' ')}`);
             });
@@ -1092,48 +1082,6 @@ pages.settings = {
                     );
                     row[`${safeName}: Feedback Sent`] = fbSent ? 'Yes' : 'No';
                 });
-
-                // --- RACE Scores ---
-                if (hasRaceData) {
-                    const raceSubmissions = studentSubmissions.filter(s => s.raceScores && s.raceScores.length > 0);
-                    if (raceSubmissions.length > 0) {
-                        let rTotals = [], aTotals = [], cTotals = [], eTotals = [];
-
-                        raceSubmissions.forEach(sub => {
-                            let rSum = 0, aSum = 0, cSum = 0, eSum = 0;
-                            let rCount = 0, aCount = 0, cCount = 0, eCount = 0;
-
-                            sub.raceScores.forEach(rs => {
-                                if (rs.R != null) { rSum += rs.R; rCount++; }
-                                if (rs.A != null) { aSum += rs.A; aCount++; }
-                                if (rs.C != null) { cSum += rs.C; cCount++; }
-                                if (rs.E != null) { eSum += rs.E; eCount++; }
-                            });
-
-                            if (rCount > 0) rTotals.push(rSum / rCount);
-                            if (aCount > 0) aTotals.push(aSum / aCount);
-                            if (cCount > 0) cTotals.push(cSum / cCount);
-                            if (eCount > 0) eTotals.push(eSum / eCount);
-                        });
-
-                        const avg = arr => arr.length > 0 ? Math.round((arr.reduce((s, v) => s + v, 0) / arr.length) * 10) / 10 : '';
-                        row['RACE: Avg R (Restate)'] = avg(rTotals);
-                        row['RACE: Avg A (Answer)'] = avg(aTotals);
-                        row['RACE: Avg C (Cite)'] = avg(cTotals);
-                        row['RACE: Avg E (Explain)'] = avg(eTotals);
-
-                        const allAvgs = [avg(rTotals), avg(aTotals), avg(cTotals), avg(eTotals)].filter(v => v !== '');
-                        row['RACE: Avg Total'] = allAvgs.length > 0 ? Math.round((allAvgs.reduce((s, v) => s + v, 0) / allAvgs.length) * 10) / 10 : '';
-                        row['RACE: Assignments Scored'] = raceSubmissions.length;
-                    } else {
-                        row['RACE: Avg R (Restate)'] = '';
-                        row['RACE: Avg A (Answer)'] = '';
-                        row['RACE: Avg C (Cite)'] = '';
-                        row['RACE: Avg E (Explain)'] = '';
-                        row['RACE: Avg Total'] = '';
-                        row['RACE: Assignments Scored'] = 0;
-                    }
-                }
 
                 // --- Skills ---
                 const calcSkillMap = await getCalculatedSkillLevels(student.id);
