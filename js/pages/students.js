@@ -509,7 +509,7 @@ pages.studentDetail = {
     _tabsRendered: {},
 
     setTab: function(tabId, btn) {
-        ['overview', 'assignments', 'attendance', 'skills', 'standards', 'writingTrends', 'notes'].forEach(t => {
+        ['overview', 'assignments', 'attendance', 'skills', 'standards', 'notes'].forEach(t => {
             const el = document.getElementById(`sd-tab-${t}`);
             if (el) el.classList.toggle('hidden', t !== tabId);
         });
@@ -527,7 +527,6 @@ pages.studentDetail = {
             if (tabId === 'skills') this.renderSkillsPortfolio(this._data.student.id);
             if (tabId === 'notes') this.renderNotesTab();
             if (tabId === 'standards') this.renderStandardsTab();
-            if (tabId === 'writingTrends') this.renderWritingTrendsTab();
         }
     },
 
@@ -536,7 +535,7 @@ pages.studentDetail = {
         this._data = null;
 
         // Reset to Overview tab visually
-        ['overview', 'assignments', 'attendance', 'skills', 'standards', 'writingTrends', 'notes'].forEach(t => {
+        ['overview', 'assignments', 'attendance', 'skills', 'standards', 'notes'].forEach(t => {
             const el = document.getElementById(`sd-tab-${t}`);
             if (el) el.classList.toggle('hidden', t !== 'overview');
         });
@@ -1070,219 +1069,7 @@ pages.studentDetail = {
         this._tabsRendered['standards'] = true;
         this.renderStandardsTab();
     },
-
-    renderWritingTrendsTab: async function() {
-        const container = document.getElementById('student-writing-trends-content');
-        if (!container || !this._data) return;
-
-        const { student } = this._data;
-        container.innerHTML = '<p style="color: var(--color-text-tertiary);">Loading writing trends...</p>';
-
-        try {
-            const history = await getRaceHistory(student.id);
-
-            // === EMPTY STATE: 0 assignments ===
-            if (history.length === 0) {
-                container.innerHTML = `
-                    <div class="card" style="padding: var(--space-lg); text-align: center;">
-                        <div style="font-size: 2em; margin-bottom: var(--space-sm);">📝</div>
-                        <p style="color: var(--color-text-secondary); margin: 0;">No RACE-scored assignments yet.</p>
-                        <p style="color: var(--color-text-tertiary); font-size: var(--font-size-body-small); margin-top: var(--space-xs);">
-                            Trends will appear after the first Google Form with a RACE rubric is imported and graded.
-                        </p>
-                    </div>`;
-                return;
-            }
-
-            // Calculate overall averages (across all assignments)
-            const letterAvgs = {};
-            ['R', 'A', 'C', 'E'].forEach(letter => {
-                const vals = history.map(h => h[letter]).filter(v => v != null);
-                letterAvgs[letter] = vals.length > 0
-                    ? Math.round((vals.reduce((s, v) => s + v, 0) / vals.length) * 10) / 10
-                    : null;
-            });
-
-            // Calculate trend arrows (last 3 vs prior) — only if ≥ 4 assignments
-            const hasTrend = history.length >= 4;
-            const trendArrows = {};
-            if (hasTrend) {
-                ['R', 'A', 'C', 'E'].forEach(letter => {
-                    const vals = history.map(h => h[letter]).filter(v => v != null);
-                    if (vals.length < 4) { trendArrows[letter] = null; return; }
-                    const recent = vals.slice(-3);
-                    const prior = vals.slice(0, -3);
-                    const recentAvg = recent.reduce((s, v) => s + v, 0) / recent.length;
-                    const priorAvg = prior.reduce((s, v) => s + v, 0) / prior.length;
-                    const diff = recentAvg - priorAvg;
-                    if (diff > 0.3) trendArrows[letter] = '↑';
-                    else if (diff < -0.3) trendArrows[letter] = '↓';
-                    else trendArrows[letter] = '→';
-                });
-            }
-
-            // Find earliest date
-            const earliestDate = history[0]?.date
-                ? new Date(history[0].date).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
-                : '';
-
-            // Full letter names
-            const letterNames = { R: 'Restate', A: 'Answer', C: 'Cite', E: 'Explain' };
-
-            // === BUILD HTML ===
-            let html = '';
-
-            // Header strip
-            html += `<div style="margin-bottom: var(--space-lg);">
-                <p style="color: var(--color-text-secondary); font-size: var(--font-size-body-small); margin: 0;">
-                    Based on <strong>${history.length}</strong> RACE-scored assignment${history.length !== 1 ? 's' : ''} since ${earliestDate}.
-                </p>
-            </div>`;
-
-            // Summary cards
-            html += `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--space-sm); margin-bottom: var(--space-lg);">`;
-            ['R', 'A', 'C', 'E'].forEach(letter => {
-                const avg = letterAvgs[letter];
-                const arrow = hasTrend ? (trendArrows[letter] || '—') : (history.length >= 2 ? '—' : '');
-                const arrowColor = arrow === '↑' ? 'var(--color-success)' : arrow === '↓' ? 'var(--color-error)' : 'var(--color-text-tertiary)';
-                const cardColor = avg == null ? 'var(--color-text-tertiary)'
-                    : avg >= 4 ? 'var(--color-success)'
-                    : avg >= 3 ? 'var(--color-warning)'
-                    : 'var(--color-error)';
-                const borderColor = CHART_COLORS[letter] || 'var(--color-border)';
-
-                html += `<div class="card" style="padding: var(--space-sm); text-align: center; border-top: 3px solid ${borderColor};">
-                    <div style="font-size: var(--font-size-body-small); color: var(--color-text-secondary); font-weight: 600;">${letter} — ${letterNames[letter]}</div>
-                    <div style="font-size: 1.8em; font-weight: 700; color: ${cardColor}; margin: 4px 0;">
-                        ${avg != null ? avg : '—'}
-                        ${arrow ? `<span style="font-size: 0.6em; color: ${arrowColor}; margin-left: 4px;">${arrow}</span>` : ''}
-                    </div>
-                    <div style="font-size: 10px; color: var(--color-text-tertiary);">out of 5</div>
-                </div>`;
-            });
-            html += `</div>`;
-
-            // Chart
-            if (history.length >= 2) {
-                html += `<div class="card" style="padding: var(--space-base); margin-bottom: var(--space-lg);">
-                    <h4 style="margin: 0 0 var(--space-sm) 0; font-size: var(--font-size-body); color: var(--color-text-secondary);">Score Trends</h4>
-                    <div id="race-trends-chart"></div>
-                </div>`;
-            } else if (history.length === 1) {
-                html += `<div class="card" style="padding: var(--space-base); margin-bottom: var(--space-lg); text-align: center; color: var(--color-text-tertiary);">
-                    <p style="font-size: var(--font-size-body-small);">Chart will appear after 2+ RACE-scored assignments.</p>
-                </div>`;
-            }
-
-            // Strengths / Weaknesses callout (only with ≥ 3 assignments)
-            if (history.length >= 3) {
-                const scored = ['R', 'A', 'C', 'E']
-                    .filter(l => letterAvgs[l] != null)
-                    .map(l => ({ letter: l, name: letterNames[l], avg: letterAvgs[l] }));
-
-                if (scored.length >= 2) {
-                    scored.sort((a, b) => b.avg - a.avg);
-                    const strongest = scored[0];
-                    const weakest = scored[scored.length - 1];
-
-                    // Only show if there's a meaningful difference
-                    if (strongest.avg !== weakest.avg) {
-                        html += `<div class="card" style="padding: var(--space-base); margin-bottom: var(--space-lg);">
-                            <div style="display: flex; gap: var(--space-lg); flex-wrap: wrap;">
-                                <div style="flex: 1; min-width: 200px;">
-                                    <div style="font-size: var(--font-size-body-small); color: var(--color-success); font-weight: 600;">💪 Strongest</div>
-                                    <div style="font-size: var(--font-size-body); margin-top: 2px;">
-                                        <strong>${strongest.name}</strong> (${strongest.letter}) — avg ${strongest.avg}
-                                    </div>
-                                </div>
-                                <div style="flex: 1; min-width: 200px;">
-                                    <div style="font-size: var(--font-size-body-small); color: var(--color-warning); font-weight: 600;">🎯 Needs Work</div>
-                                    <div style="font-size: var(--font-size-body); margin-top: 2px;">
-                                        <strong>${weakest.name}</strong> (${weakest.letter}) — avg ${weakest.avg}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>`;
-                    }
-                }
-            }
-
-            // Assignment-level detail (expandable)
-            html += `<div style="margin-top: var(--space-sm);">
-                <button class="btn btn--secondary" style="font-size: var(--font-size-body-small); padding: 4px 12px;"
-                    onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? '' : 'none'; this.textContent = this.nextElementSibling.style.display === 'none' ? '📋 Show Assignment Details' : '📋 Hide Assignment Details';">
-                    📋 Show Assignment Details
-                </button>
-                <div style="display: none; margin-top: var(--space-sm);">
-                    <table style="width: 100%; border-collapse: collapse; font-size: var(--font-size-body-small);">
-                        <thead><tr style="border-bottom: 2px solid var(--color-border);">
-                            <th style="text-align: left; padding: var(--space-xs);">Assignment</th>
-                            <th style="text-align: center; padding: var(--space-xs);">R</th>
-                            <th style="text-align: center; padding: var(--space-xs);">A</th>
-                            <th style="text-align: center; padding: var(--space-xs);">C</th>
-                            <th style="text-align: center; padding: var(--space-xs);">E</th>
-                            <th style="text-align: center; padding: var(--space-xs);">Qs</th>
-                        </tr></thead>
-                        <tbody>
-                            ${history.map(h => {
-                                const dateStr = h.date ? new Date(h.date).toLocaleDateString('en-US', {month: 'short', day: 'numeric'}) : '';
-                                const colorVal = v => v == null ? 'var(--color-text-tertiary)' : v >= 4 ? 'var(--color-success)' : v >= 3 ? 'var(--color-warning)' : 'var(--color-error)';
-                                return `<tr style="border-bottom: 1px solid var(--color-border); cursor: pointer;" onclick="state.selectedActivity = ${h.activityId}; router.navigate('activity-detail');">
-                                    <td style="padding: var(--space-xs);">
-                                        <div>${escapeHtml(h.activityName)}</div>
-                                        <div style="font-size: 10px; color: var(--color-text-tertiary);">${dateStr}</div>
-                                    </td>
-                                    <td style="padding: var(--space-xs); text-align: center; color: ${colorVal(h.R)}; font-weight: 600;">${h.R != null ? h.R : '—'}</td>
-                                    <td style="padding: var(--space-xs); text-align: center; color: ${colorVal(h.A)}; font-weight: 600;">${h.A != null ? h.A : '—'}</td>
-                                    <td style="padding: var(--space-xs); text-align: center; color: ${colorVal(h.C)}; font-weight: 600;">${h.C != null ? h.C : '—'}</td>
-                                    <td style="padding: var(--space-xs); text-align: center; color: ${colorVal(h.E)}; font-weight: 600;">${h.E != null ? h.E : '—'}</td>
-                                    <td style="padding: var(--space-xs); text-align: center; color: var(--color-text-tertiary);">${h.questionCount}</td>
-                                </tr>`;
-                            }).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            </div>`;
-
-            container.innerHTML = html;
-
-            // Render chart AFTER innerHTML is set (so the container exists in the DOM)
-            if (history.length >= 2) {
-                const chartContainer = document.getElementById('race-trends-chart');
-                if (chartContainer) {
-                    const xLabels = history.map(h => {
-                        const name = h.activityName || '';
-                        return name.length > 14 ? name.substring(0, 12) + '…' : name;
-                    });
-
-                    // Determine chart height based on container width (iPad portrait vs landscape)
-                    const chartHeight = chartContainer.clientWidth < 500 ? 220 : 280;
-
-                    renderLineChart(chartContainer, [
-                        { key: 'R', label: 'Restate', color: CHART_COLORS.R, strokeDash: CHART_STROKES.R, values: history.map(h => h.R) },
-                        { key: 'A', label: 'Answer', color: CHART_COLORS.A, strokeDash: CHART_STROKES.A, values: history.map(h => h.A) },
-                        { key: 'C', label: 'Cite', color: CHART_COLORS.C, strokeDash: CHART_STROKES.C, values: history.map(h => h.C) },
-                        { key: 'E', label: 'Explain', color: CHART_COLORS.E, strokeDash: CHART_STROKES.E, values: history.map(h => h.E) }
-                    ], {
-                        xLabels,
-                        height: chartHeight,
-                        yMin: 0,
-                        yMax: 5,
-                        yTicks: [0, 1, 2, 3, 4, 5],
-                        yLabel: 'Score',
-                        legend: true,
-                        pointRadius: 5,
-                        tooltips: true
-                    });
-                }
-            }
-
-        } catch (err) {
-            console.error('Error rendering writing trends:', err);
-            container.innerHTML = '<p style="color: var(--color-text-tertiary); font-style: italic;">Could not load writing trends.</p>';
-        }
-    },
-
+    
     renderSkillsPortfolio: async function(studentId) {
         const container = document.getElementById('student-skills-portfolio');
         if (!container) return;
