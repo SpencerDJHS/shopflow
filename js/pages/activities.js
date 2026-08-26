@@ -1865,7 +1865,6 @@ pages.activityEdit = {
                     requiredMaterials: materialsWithLocation,
                     slidesUrl: activity.slidesUrl || '',
                     instructionSteps: activity.instructionSteps || [],
-                    instructionSteps: activity.instructionSteps || [],
                     getReadyTime: activity.getReadyTime || '',
                     getReadyTasks: activity.getReadyTasks || [],
                     getReadyRoleTasks: activity.getReadyRoleTasks || '',
