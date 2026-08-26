@@ -2666,6 +2666,17 @@ pages.settings = {
                 if (existingMatch.name) {
                     delete activityData.name;
                 }
+                // Don't let an absent JSON key blank a field that already has data.
+                const preserveIfMissing = ['requiredTools', 'requiredMaterials', 'resourceLinks',
+                    'slidesUrl', 'getReadyTasks', 'getReadyTime', 'getReadyRoleTasks',
+                    'conclusionQuestions', 'conclusionSubmissionMethod', 'fusionGoals',
+                    'documentationChecklist', 'appendixItems', 'portfolioPrompts', 'contractBrief'];
+                for (const field of preserveIfMissing) {
+                    const incoming = guide[field];
+                    const isEmpty = incoming === undefined || incoming === null
+                        || (Array.isArray(incoming) && incoming.length === 0);
+                    if (isEmpty) delete activityData[field];
+                }
                 await db.activities.update(activityId, activityData);
                 await logAction('update', 'activity', activityId, `Contract guide import: updated ${guide.contractCode}`);
             } else {
