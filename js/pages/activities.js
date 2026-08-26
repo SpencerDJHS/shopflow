@@ -511,8 +511,8 @@ pages.activityEdit = {
             document.getElementById('fe-class-id').value = activity.classId || '';
             document.getElementById('fe-start-date').value = activity.startDate || '';
             document.getElementById('fe-end-date').value = activity.endDate || '';
-            document.getElementById('fe-scoring-type').value = activity.scoringType || 'complete-incomplete';
-            document.getElementById('fe-points').value = activity.defaultPoints || '';
+            safeSet('fe-scoring-type', 'value', activity.scoringType || 'complete-incomplete');
+            safeSet('fe-points', 'value', activity.defaultPoints || '');
             // Keep Classroom Max Points in sync with the saved defaultPoints value
             const feMaxPts = document.getElementById('fe-classroom-max-points');
             if (feMaxPts) feMaxPts.value = activity.defaultPoints || 100;
@@ -520,7 +520,7 @@ pages.activityEdit = {
             document.getElementById('fe-form-spreadsheet').value = activity.formSpreadsheetId || '';
 
             if (activity.assignmentTypeId) {
-                document.getElementById('fe-type-select').value = activity.assignmentTypeId;
+                safeSet('fe-type-select', 'value', activity.assignmentTypeId);
             }
 
             // Scoring field visibility
@@ -528,16 +528,18 @@ pages.activityEdit = {
 
             // Rubric levels + criteria
             if (activity.rubric) {
-                document.getElementById('fe-rubric-levels').value = (activity.rubric.levels || []).join(', ');
+                safeSet('fe-rubric-levels', 'value', (activity.rubric.levels || []).join(', '));
                 const criteriaDiv = document.getElementById('fe-rubric-criteria');
-                criteriaDiv.innerHTML = '';
-                (activity.rubric.criteria || []).forEach(c => this.addRubricCriterion(c.name));
+                if (criteriaDiv) {
+                    criteriaDiv.innerHTML = '';
+                    (activity.rubric.criteria || []).forEach(c => this.addRubricCriterion(c.name));
+                }
             }
 
             // Checkpoint grade weight
             if (activity.checkpointGradeWeight > 0) {
-                document.getElementById('fe-cp-weight').value = activity.checkpointGradeWeight;
-                document.getElementById('fe-cp-weight-display').textContent = activity.checkpointGradeWeight + '%';
+                safeSet('fe-cp-weight', 'value', activity.checkpointGradeWeight);
+                safeSet('fe-cp-weight-display', 'textContent', activity.checkpointGradeWeight + '%');
             }
             if (activity.checkpointGradeMode === 'timeliness') {
                 const radio = document.querySelector('input[name="fe-cp-grade-mode"][value="timeliness"]');
@@ -660,7 +662,8 @@ pages.activityEdit = {
             this.updateAllSummaries();
 
             // Show the checkpoint grading section if checkpoints exist
-            document.getElementById('fe-cp-grading-section').style.display = checkpoints.length > 0 ? '' : 'none';
+            const cpGradingSection = document.getElementById('fe-cp-grading-section');
+            if (cpGradingSection) cpGradingSection.style.display = checkpoints.length > 0 ? '' : 'none';
 
         } else {
             // --- CREATE MODE ---
