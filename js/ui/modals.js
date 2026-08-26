@@ -633,10 +633,6 @@ const modals = {
         document.getElementById('classroom-coursework-group').style.display = 'none';
         state._classroomLinksTemp = {};
         state._classroomPendingCreate = {};
-        document.getElementById('activity-cp-weight').value = 0;
-        document.getElementById('cp-weight-display').textContent = '0%';
-        document.querySelectorAll('input[name="cp-grade-mode"]').forEach(function(r) { r.checked = (r.value === 'completion'); });
-        document.getElementById('checkpoint-grading-section').style.display = 'none';
         ui.showModal('modal-activity');
         this.addCheckpointField();
     },
@@ -943,8 +939,7 @@ const modals = {
             return f.querySelector('.checkpoint-title').value.trim() !== '';
         });
         // Show section if there's at least one checkpoint field (even if empty, since user might be filling it in)
-        document.getElementById('checkpoint-grading-section').style.display = cpFields.length > 0 ? '' : 'none';
-    },
+        },
 
     createClassroomCoursework: function() {
         const courseId = document.getElementById('activity-classroom-course').value;
@@ -2189,6 +2184,7 @@ const modals = {
                                 requiredTools: toolsWithLocation,
                                 requiredMaterials: materialsWithLocation,
                                 slidesUrl: activity.slidesUrl || '',
+                                instructionSteps: activity.instructionSteps || [],
                                 getReadyTime: activity.getReadyTime || '',
                                 getReadyTasks: activity.getReadyTasks || [],
                                 getReadyRoleTasks: activity.getReadyRoleTasks || '',
