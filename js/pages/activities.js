@@ -597,6 +597,8 @@ pages.activityEdit = {
             this.renderRequiredMaterials();
 
             document.getElementById('fe-slides-url').value = activity.slidesUrl || '';
+            this._instructionSteps = activity.instructionSteps || [];
+            this.renderInstructionSteps();
 
             document.getElementById('fe-get-ready-time').value = activity.getReadyTime || '';
             this._getReadyTasks = activity.getReadyTasks || [];
@@ -732,6 +734,8 @@ pages.activityEdit = {
             document.getElementById('fe-required-materials-list').innerHTML = '';
 
             safeSet('fe-slides-url', 'value', '');
+            this._instructionSteps = [];
+            document.getElementById('fe-instruction-steps-list').innerHTML = '';
 
             safeSet('fe-get-ready-time', 'value', '');
             this._getReadyTasks = [];
@@ -1024,25 +1028,6 @@ pages.activityEdit = {
         if (!startDate || !endDate) { ui.showToast('Start and end dates are required', 'error'); return; }
 
         try {
-            const typeSelect = document.getElementById('fe-type-select');
-            const scoringType = document.getElementById('fe-scoring-type').value || 'complete-incomplete';
-
-            // Build rubric
-            let rubric = null;
-            if (scoringType === 'rubric') {
-                const manualLevels = document.getElementById('fe-rubric-levels').value;
-                const manualCriteria = document.querySelectorAll('.fe-rubric-criterion-name');
-                if (manualLevels && manualCriteria.length > 0) {
-                    const levels = manualLevels.split(',').map(l => l.trim()).filter(l => l);
-                    const criteria = Array.from(manualCriteria)
-                        .map(input => ({ name: input.value.trim(), descriptions: levels.map(() => '') }))
-                        .filter(c => c.name);
-                    if (levels.length > 0 && criteria.length > 0) {
-                        rubric = { levels, criteria };
-                    }
-                }
-            }
-
             const activityData = {
                 name,
                 description,
@@ -1050,13 +1035,7 @@ pages.activityEdit = {
                 startDate,
                 endDate,
                 status: 'active',
-                assignmentTypeId: parseInt(typeSelect.value) || null,
-                scoringType,
-                targetType: typeSelect.dataset?.targetType || 'team',
-                defaultPoints: parseInt(document.getElementById('fe-points').value) || null,
-                rubric,
-                checkpointGradeWeight: parseInt(document.getElementById('fe-cp-weight').value) || 0,
-                checkpointGradeMode: document.querySelector('input[name="fe-cp-grade-mode"]:checked')?.value || 'completion',
+                scoringType: 'mastery',
                 formUrl: document.getElementById('fe-form-url').value.trim() || null,
                 formSpreadsheetId: document.getElementById('fe-form-spreadsheet').value.trim() || null,
                 classroomLinks: (function() {
@@ -1091,6 +1070,7 @@ pages.activityEdit = {
 
             // Activity Guide — Student Instructions
             slidesUrl: document.getElementById('fe-slides-url').value.trim() || null,
+            instructionSteps: this._instructionSteps || [],
 
             // Activity Guide — Get Ready
             getReadyTime: document.getElementById('fe-get-ready-time').value.trim() || null,
@@ -1320,6 +1300,69 @@ pages.activityEdit = {
                 <input type="text" class="form-input" placeholder="e.g., Copy paper" value="${escapeHtml(mat.name || '')}" style="flex: 2;" onchange="pages.activityEdit._requiredMaterials[${i}].name = this.value">
                 <input type="text" class="form-input" placeholder="e.g., 10 sheets per team" value="${escapeHtml(mat.quantity || '')}" style="flex: 1;" onchange="pages.activityEdit._requiredMaterials[${i}].quantity = this.value">
                 <button type="button" class="btn btn--ghost btn--sm" onclick="pages.activityEdit.removeRequiredMaterial(${i})">✕</button>
+            `;
+            container.appendChild(row);
+        });
+    },
+
+    // ── Instruction Steps helpers ──
+    _instructionSteps: [],
+
+    addInstructionStep: function() {
+        this._instructionSteps.push({
+            title: '', time: '', body: '',
+            roles: { leader: '', recorder: '', materials: '', timekeeper: '' }
+        });
+        this.renderInstructionSteps();
+    },
+
+    removeInstructionStep: function(index) {
+        this._instructionSteps.splice(index, 1);
+        this.renderInstructionSteps();
+    },
+
+    moveInstructionStep: function(index, delta) {
+        const target = index + delta;
+        if (target < 0 || target >= this._instructionSteps.length) return;
+        const item = this._instructionSteps.splice(index, 1)[0];
+        this._instructionSteps.splice(target, 0, item);
+        this.renderInstructionSteps();
+    },
+
+    renderInstructionSteps: function() {
+        const container = document.getElementById('fe-instruction-steps-list');
+        if (!container) return;
+        container.innerHTML = '';
+
+        this._instructionSteps.forEach((step, i) => {
+            if (!step.roles) step.roles = {};
+            const row = document.createElement('div');
+            row.className = 'card';
+            row.style.cssText = 'padding: var(--space-sm); margin-bottom: var(--space-sm);';
+            row.innerHTML = `
+                <div style="display:flex; gap:var(--space-xs); align-items:center; margin-bottom:var(--space-xs);">
+                    <strong style="flex:0 0 auto; color:var(--color-text-muted);">${i + 1}</strong>
+                    <input type="text" class="form-input" placeholder="Step title" value="${escapeHtml(step.title || '')}" style="flex:3;"
+                        onchange="pages.activityEdit._instructionSteps[${i}].title = this.value">
+                    <input type="text" class="form-input" placeholder="e.g., 15 min" value="${escapeHtml(step.time || '')}" style="flex:1;"
+                        onchange="pages.activityEdit._instructionSteps[${i}].time = this.value">
+                    <button type="button" class="btn btn--ghost btn--sm" onclick="pages.activityEdit.moveInstructionStep(${i}, -1)">↑</button>
+                    <button type="button" class="btn btn--ghost btn--sm" onclick="pages.activityEdit.moveInstructionStep(${i}, 1)">↓</button>
+                    <button type="button" class="btn btn--ghost btn--sm" onclick="pages.activityEdit.removeInstructionStep(${i})">✕</button>
+                </div>
+                <textarea class="form-input" rows="3" placeholder="What students do in this step"
+                    style="width:100%; margin-bottom:var(--space-xs);"
+                    onchange="pages.activityEdit._instructionSteps[${i}].body = this.value">${escapeHtml(step.body || '')}</textarea>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:var(--space-xs);">
+                    <input type="text" class="form-input" placeholder="Team Leader — leave blank to hide" value="${escapeHtml(step.roles.leader || '')}"
+                        onchange="pages.activityEdit._instructionSteps[${i}].roles.leader = this.value">
+                    <input type="text" class="form-input" placeholder="Recorder — leave blank to hide" value="${escapeHtml(step.roles.recorder || '')}"
+                        onchange="pages.activityEdit._instructionSteps[${i}].roles.recorder = this.value">
+                    <input type="text" class="form-input" placeholder="Materials Manager — leave blank to hide" value="${escapeHtml(step.roles.materials || '')}"
+                        onchange="pages.activityEdit._instructionSteps[${i}].roles.materials = this.value">
+                    <input type="text" class="form-input" placeholder="Timekeeper — leave blank to hide" value="${escapeHtml(step.roles.timekeeper || '')}"
+                        onchange="pages.activityEdit._instructionSteps[${i}].roles.timekeeper = this.value">
+                </div>
             `;
             container.appendChild(row);
         });
@@ -1821,6 +1864,8 @@ pages.activityEdit = {
                     requiredTools: toolsWithLocation,
                     requiredMaterials: materialsWithLocation,
                     slidesUrl: activity.slidesUrl || '',
+                    instructionSteps: activity.instructionSteps || [],
+                    instructionSteps: activity.instructionSteps || [],
                     getReadyTime: activity.getReadyTime || '',
                     getReadyTasks: activity.getReadyTasks || [],
                     getReadyRoleTasks: activity.getReadyRoleTasks || '',
@@ -1914,7 +1959,9 @@ pages.activityEdit = {
 
             select.innerHTML = '<option value="">Not linked</option>';
             if (result.status === 'success' && result.courses) {
+                this._courseData = {};
                 result.courses.forEach(c => {
+                    this._courseData[c.id] = c;
                     select.innerHTML += `<option value="${c.id}">${escapeHtml(c.name)}${c.section ? ' — ' + escapeHtml(c.section) : ''}</option>`;
                 });
 
@@ -1942,21 +1989,14 @@ pages.activityEdit = {
         const gradeCatGroup = document.getElementById('fe-grade-cat-group');
         const assigneesGroup = document.getElementById('fe-assignees-group');
         const materialsGroup = document.getElementById('fe-materials-group');
-        const rubricSyncGroup = document.getElementById('fe-rubric-sync-group');
-
         if (!courseId) {
-            [cwGroup, topicGroup, publishGroup, gradeCatGroup, assigneesGroup, materialsGroup, rubricSyncGroup].forEach(el => el.style.display = 'none');
+            [cwGroup, topicGroup, publishGroup, gradeCatGroup, assigneesGroup, materialsGroup].forEach(el => el.style.display = 'none');
+            document.getElementById('fe-skill-link-status').style.display = 'none';
             return;
         }
 
         // Show all sub-fields
         [cwGroup, topicGroup, publishGroup, gradeCatGroup, assigneesGroup, materialsGroup].forEach(el => el.style.display = '');
-
-        // Rubric sync hidden — requires premium Google Workspace for Education license
-        // To re-enable, uncomment the line below
-        // const scoringType = document.getElementById('fe-scoring-type').value;
-        // rubricSyncGroup.style.display = scoringType === 'rubric' ? '' : 'none';
-        rubricSyncGroup.style.display = 'none';
 
         // Set smart default for publish mode
         const startDate = document.getElementById('fe-start-date').value;
@@ -1972,6 +2012,9 @@ pages.activityEdit = {
             this._loadTopics(courseId),
             this._loadStudentChecklist(courseId)
         ]);
+
+        // Update skill/PP link status for this course
+        this.updateSkillLinkStatus();
     },
 
     _loadCourseworkDropdown: async function(courseId) {
@@ -2482,4 +2525,236 @@ pages.activityEdit = {
           }
       }
   },
+
+    updateSkillLinkStatus: async function() {
+        const courseId = document.getElementById('fe-classroom-course').value;
+        const statusContainer = document.getElementById('fe-skill-link-status');
+        const listContainer = document.getElementById('fe-skill-link-list');
+        const summaryEl = document.getElementById('fe-skill-link-summary');
+
+        if (!courseId || !this._activityId) {
+            if (statusContainer) statusContainer.style.display = 'none';
+            return;
+        }
+
+        statusContainer.style.display = '';
+        const activitySkills = await db.activitySkills.where('activityId').equals(this._activityId).toArray();
+        const skillIds = activitySkills.map(as => as.skillId);
+        const skills = (await db.skills.bulkGet(skillIds)).filter(s => s);
+
+        // Check which skills have Classroom links for this course
+        let linkedCount = 0;
+        let html = '';
+        for (const skill of skills) {
+            const links = skill.classroomLinks || {};
+            const isLinked = !!links[courseId];
+            if (isLinked) linkedCount++;
+            html += `<div style="display: flex; align-items: center; gap: var(--space-xs); padding: 2px 0;">
+                <span style="color: ${isLinked ? 'var(--color-success)' : 'var(--color-text-tertiary)'};">${isLinked ? '✅' : '⬜'}</span>
+                <span>${escapeHtml(skill.name)}</span>
+            </div>`;
+        }
+
+        // PP status
+        const activity = await db.activities.get(this._activityId);
+        const ppLinked = activity?.classroomLinks && !!activity.classroomLinks[courseId];
+        html += `<div style="display: flex; align-items: center; gap: var(--space-xs); padding: 2px 0; margin-top: var(--space-xs); border-top: 1px solid var(--color-border); padding-top: var(--space-xs);">
+            <span style="color: ${ppLinked ? 'var(--color-success)' : 'var(--color-text-tertiary)'};">${ppLinked ? '✅' : '⬜'}</span>
+            <span style="font-weight: 600;">Professional Practice</span>
+        </div>`;
+
+        listContainer.innerHTML = html;
+        summaryEl.textContent = `${linkedCount}/${skills.length} skills linked${ppLinked ? ', PP linked' : ''}`;
+
+        // Hide/show buttons based on what's already linked
+        const createSkillBtn = document.getElementById('fe-create-skill-assignments-btn');
+        const createPPBtn = document.getElementById('fe-create-pp-assignment-btn');
+        if (createSkillBtn) createSkillBtn.style.display = linkedCount < skills.length ? '' : 'none';
+        if (createPPBtn) createPPBtn.style.display = ppLinked ? 'none' : '';
+
+        // Populate grade category dropdowns from course data
+        const courseData = (this._courseData || {})[courseId];
+        const skillsCatSelect = document.getElementById('fe-skills-grade-category');
+        const ppCatSelect = document.getElementById('fe-pp-grade-category');
+        if (courseData && courseData.gradeCategories && courseData.gradeCategories.length > 0) {
+            const cats = courseData.gradeCategories;
+            const savedSkillsCat = localStorage.getItem('classroom-skills-category-' + courseId) || '';
+            const savedPPCat = localStorage.getItem('classroom-pp-category-' + courseId) || '';
+
+            skillsCatSelect.innerHTML = '<option value="">None (no category)</option>';
+            ppCatSelect.innerHTML = '<option value="">None (no category)</option>';
+            cats.forEach(cat => {
+                const weightPct = cat.weight ? (cat.weight / 10000).toFixed(0) + '%' : '';
+                const label = escapeHtml(cat.name) + (weightPct ? ' (' + weightPct + ')' : '');
+                skillsCatSelect.innerHTML += '<option value="' + cat.id + '" data-name="' + escapeHtml(cat.name) + '">' + label + '</option>';
+                ppCatSelect.innerHTML += '<option value="' + cat.id + '" data-name="' + escapeHtml(cat.name) + '">' + label + '</option>';
+            });
+
+            // Restore saved selections, or auto-match by name
+            if (savedSkillsCat) {
+                skillsCatSelect.value = savedSkillsCat;
+            } else {
+                const autoSkill = cats.find(c => /skill/i.test(c.name));
+                if (autoSkill) skillsCatSelect.value = autoSkill.id;
+            }
+            if (savedPPCat) {
+                ppCatSelect.value = savedPPCat;
+            } else {
+                const autoPP = cats.find(c => /profess|practice|pp/i.test(c.name));
+                if (autoPP) ppCatSelect.value = autoPP.id;
+            }
+
+            // Auto-save the initial selection
+            this.saveGradeCategorySelection();
+        }
+    },
+
+    saveGradeCategorySelection: function() {
+        const courseId = document.getElementById('fe-classroom-course').value;
+        if (!courseId) return;
+        const skillsCatId = document.getElementById('fe-skills-grade-category').value;
+        const ppCatId = document.getElementById('fe-pp-grade-category').value;
+        if (skillsCatId) localStorage.setItem('classroom-skills-category-' + courseId, skillsCatId);
+        else localStorage.removeItem('classroom-skills-category-' + courseId);
+        if (ppCatId) localStorage.setItem('classroom-pp-category-' + courseId, ppCatId);
+        else localStorage.removeItem('classroom-pp-category-' + courseId);
+    },
+
+    createSkillAssignments: async function() {
+        const courseId = document.getElementById('fe-classroom-course').value;
+        if (!courseId || !this._activityId) {
+            ui.showToast('Select a Classroom course first', 'warning');
+            return;
+        }
+
+        const webhookUrl = localStorage.getItem('webhook_wildcat');
+        const token = localStorage.getItem('webhook_token') || '';
+        const skillsCatId = localStorage.getItem('classroom-skills-category-' + courseId) || '';
+        const skillsCatName = document.getElementById('fe-skills-grade-category')?.selectedOptions?.[0]?.dataset?.name || 'Skills';
+
+        if (!webhookUrl) {
+            ui.showToast('No webhook URL configured', 'error');
+            return;
+        }
+
+        const activitySkills = await db.activitySkills.where('activityId').equals(this._activityId).toArray();
+        const skillIds = activitySkills.map(as => as.skillId);
+        const skills = (await db.skills.bulkGet(skillIds)).filter(s => s);
+
+        // Only create for skills not yet linked to this course
+        const toCreate = skills.filter(s => !(s.classroomLinks || {})[courseId]);
+        if (toCreate.length === 0) {
+            ui.showToast('All skills already linked to this course', 'info');
+            return;
+        }
+
+        if (!confirm(`Create ${toCreate.length} skill assignment(s) in Classroom?`)) return;
+
+        const btn = document.getElementById('fe-create-skill-assignments-btn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Creating...'; }
+
+        let created = 0;
+        for (const skill of toCreate) {
+            try {
+                const payload = {
+                    token: token,
+                    action: 'create_classroom_coursework',
+                    courseId: courseId,
+                    title: skill.name,
+                    description: 'Skill mastery assessment — scored by most recent observation',
+                    maxPoints: 100,
+                    publishState: 'PUBLISHED'
+                };
+                if (skillsCatId) {
+                    payload.gradeCategory = { id: skillsCatId, name: skillsCatName };
+                }
+
+                const resp = await fetch(webhookUrl, { method: 'POST', body: JSON.stringify(payload) });
+                const result = await resp.json();
+
+                if (result.status === 'success') {
+                    // Store link on skill record
+                    const links = skill.classroomLinks || {};
+                    links[courseId] = result.courseworkId;
+                    await db.skills.update(skill.id, { classroomLinks: links });
+                    created++;
+                } else {
+                    ui.showToast(`Failed to create "${skill.name}": ${result.message}`, 'error');
+                }
+            } catch (err) {
+                ui.showToast(`Error creating "${skill.name}": ${err.message}`, 'error');
+            }
+        }
+
+        if (btn) { btn.disabled = false; btn.textContent = 'Create Skill Assignments'; }
+        ui.showToast(`✅ Created ${created}/${toCreate.length} skill assignments in Classroom`, 'success');
+        driveSync.markDirty();
+        this.updateSkillLinkStatus();
+    },
+
+    createPPAssignment: async function() {
+        const courseId = document.getElementById('fe-classroom-course').value;
+        if (!courseId || !this._activityId) {
+            ui.showToast('Select a Classroom course first', 'warning');
+            return;
+        }
+
+        const activity = await db.activities.get(this._activityId);
+        if (!activity) return;
+
+        // Check if already linked
+        if (activity.classroomLinks && activity.classroomLinks[courseId]) {
+            ui.showToast('PP assignment already linked to this course', 'info');
+            return;
+        }
+
+        const webhookUrl = localStorage.getItem('webhook_wildcat');
+        const token = localStorage.getItem('webhook_token') || '';
+        const ppCatId = localStorage.getItem('classroom-pp-category-' + courseId) || '';
+        const ppCatName = document.getElementById('fe-pp-grade-category')?.selectedOptions?.[0]?.dataset?.name || 'Professional Practice';
+
+        if (!webhookUrl) {
+            ui.showToast('No webhook URL configured', 'error');
+            return;
+        }
+
+        const contractCode = activity.name?.match(/^[A-Z]\d+/)?.[0] || activity.name || 'Activity';
+
+        const btn = document.getElementById('fe-create-pp-assignment-btn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Creating...'; }
+
+        try {
+            const payload = {
+                token: token,
+                action: 'create_classroom_coursework',
+                courseId: courseId,
+                title: `${contractCode}: Professional Practice`,
+                description: 'Holistic assessment of checkpoint completion, pacing, deliverables, and teamwork',
+                maxPoints: 100,
+                publishState: 'PUBLISHED'
+            };
+            if (ppCatId) {
+                payload.gradeCategory = { id: ppCatId, name: ppCatName };
+            }
+
+            const resp = await fetch(webhookUrl, { method: 'POST', body: JSON.stringify(payload) });
+            const result = await resp.json();
+
+            if (result.status === 'success') {
+                const links = activity.classroomLinks || {};
+                links[courseId] = result.courseworkId;
+                await db.activities.update(activity.id, { classroomLinks: links });
+                state._classroomLinksTemp = links;
+                ui.showToast(`✅ Created PP assignment in Classroom`, 'success');
+                driveSync.markDirty();
+            } else {
+                ui.showToast('Failed: ' + (result.message || 'Unknown error'), 'error');
+            }
+        } catch (err) {
+            ui.showToast('Error: ' + err.message, 'error');
+        }
+
+        if (btn) { btn.disabled = false; btn.textContent = 'Create PP Assignment'; }
+        this.updateSkillLinkStatus();
+    },
 };
