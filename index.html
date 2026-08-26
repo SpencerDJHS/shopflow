@@ -89,7 +89,6 @@
     <script src="js/features/pinLock.js"></script>
     <script src="js/features/exportManager.js"></script>
     <script src="js/features/autoTasks.js"></script>
-    <script src="js/features/raceHistory.js"></script>
     <script src="js/features/appFeatures.js"></script>
 
     <!-- Pages -->
@@ -508,7 +507,6 @@
                     <button class="tab-btn" onclick="pages.studentDetail.setTab('attendance', this)">Attendance</button>
                     <button class="tab-btn" onclick="pages.studentDetail.setTab('skills', this)">Skills & Certs</button>
                     <button class="tab-btn" onclick="pages.studentDetail.setTab('standards', this)">Standards</button>
-                    <button class="tab-btn" onclick="pages.studentDetail.setTab('writingTrends', this)">Writing Trends</button>
                     <button class="tab-btn" onclick="pages.studentDetail.setTab('notes', this)">Notes</button>
                 </div>
 
@@ -536,14 +534,7 @@
                 <div id="sd-tab-standards" class="hidden">
                     <div id="student-standards-content"></div>
                 </div>
-
-                <!-- TAB: Writing Trends (Sprint 14.1 shell — content in 14.2) -->
-                <div id="sd-tab-writingTrends" class="hidden">
-                    <div id="student-writing-trends-content">
-                        <p style="color: var(--color-text-tertiary); font-style: italic;">Writing Trends will appear here after RACE-scored assignments are imported.</p>
-                    </div>
-                </div>
-
+                
                 <!-- TAB: Notes -->
                 <div id="sd-tab-notes" class="hidden">
                     <div style="display: flex; gap: 10px; margin-bottom: var(--space-md);">
@@ -699,108 +690,6 @@
             </section>
             
             <!-- ==================================== -->
-            <!-- PAGE: ASSIGNMENT TYPES CONFIG        -->
-            <!-- ==================================== -->
-            <section id="page-assignment-types" class="page hidden">
-                <header class="page-header">
-                    <div>
-                        <h2 class="page-title">Assignment Types</h2>
-                        <p class="page-subtitle">Define reusable templates for each class. When creating an assignment, selecting a type auto-fills checkpoints, scoring, and other defaults.</p>
-                    </div>
-                    <button class="btn btn--secondary" onclick="router.navigate('activities')">← Back to Assignments</button>
-                </header>
-
-                <!-- Class filter -->
-                <div id="atype-class-filters" style="display: flex; gap: var(--space-sm); margin-bottom: var(--space-lg); flex-wrap: wrap;">
-                    <!-- Populated dynamically -->
-                </div>
-
-                <!-- Types list -->
-                <div id="atype-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: var(--space-base);">
-                </div>
-
-                <button class="btn btn--primary" style="margin-top: var(--space-lg);" onclick="pages.assignmentTypes.showAddModal()">+ Add Assignment Type</button>
-            </section>
-
-            <!-- Assignment Type Modal -->
-            <div id="modal-assignment-type" class="modal-backdrop hidden" role="dialog" aria-modal="true">
-                <div class="modal" style="max-width: 700px;">
-                    <div class="modal__header">
-                        <h3 id="atype-modal-title">Add Assignment Type</h3>
-                        <button class="modal__close" onclick="pages.assignmentTypes.hideModal()">&times;</button>
-                    </div>
-                    <div class="modal__body" style="max-height: 70vh; overflow-y: auto;">
-                        <div class="form-group">
-                            <label class="form-label">Class *</label>
-                            <select id="atype-class" class="form-select" required>
-                                <option value="">Select Class...</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Type Name *</label>
-                            <input type="text" id="atype-name" class="form-input" placeholder="e.g., Activity, Project, Lab, Test">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Target Type</label>
-                            <select id="atype-target" class="form-select">
-                                <option value="team">Team-based (scored individually)</option>
-                                <option value="individual">Individual</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Scoring Method</label>
-                            <select id="atype-scoring" class="form-select" onchange="pages.assignmentTypes.toggleScoringFields()">
-                                <option value="rubric">Rubric (criteria with levels)</option>
-                                <option value="points">Points (e.g., 85/100)</option>
-                                <option value="complete-incomplete">Complete / Incomplete</option>
-                            </select>
-                        </div>
-
-                        <!-- Points field (hidden unless scoring = points) -->
-                        <div class="form-group" id="atype-points-group" style="display: none;">
-                            <label class="form-label">Default Points</label>
-                            <input type="number" id="atype-points" class="form-input" placeholder="100" min="0">
-                        </div>
-
-                        <!-- Rubric builder (hidden unless scoring = rubric) -->
-                        <div id="atype-rubric-group">
-                            <div class="form-group">
-                                <label class="form-label">Rubric Levels (comma-separated, best to worst)</label>
-                                <input type="text" id="atype-rubric-levels" class="form-input" placeholder="e.g., Advanced, Proficient, Developing, Beginning" value="Advanced, Proficient, Developing, Beginning">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Rubric Criteria</label>
-                                <div id="atype-rubric-criteria">
-                                    <!-- Criteria rows added dynamically -->
-                                </div>
-                                <button type="button" class="btn btn--secondary" style="margin-top: var(--space-sm);" onclick="pages.assignmentTypes.addCriterion()">+ Add Criterion</button>
-                            </div>
-                        </div>
-
-                        <div class="form-group">
-                            <label class="form-label">Default Duration (days)</label>
-                            <input type="number" id="atype-duration" class="form-input" placeholder="14" min="1">
-                            <p class="form-helper">Due date will be auto-calculated from start date</p>
-                        </div>
-
-                        <!-- Default checkpoints -->
-                        <div class="form-group">
-                            <label class="form-label">Default Checkpoints</label>
-                            <div id="atype-checkpoints">
-                                <!-- Checkpoint rows added dynamically -->
-                            </div>
-                            <button type="button" class="btn btn--secondary" style="margin-top: var(--space-sm);" onclick="pages.assignmentTypes.addCheckpointTemplate()">+ Add Checkpoint</button>
-                        </div>
-                    </div>
-                    <div class="modal__footer">
-                        <button class="btn btn--secondary" onclick="pages.assignmentTypes.hideModal()">Cancel</button>
-                        <button class="btn btn--danger" id="atype-delete-btn" style="display: none;" onclick="pages.assignmentTypes.deleteType()">Delete</button>
-                        <button class="btn btn--primary" onclick="pages.assignmentTypes.saveType()">Save Type</button>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- ==================================== -->
             <!-- PAGE: ACTIVITY DETAIL                -->
             <!-- ==================================== -->
             <section id="page-activity-detail" class="page activity-detail-page hidden">
@@ -897,13 +786,6 @@
                         </div>
                         <div class="edit-section__body">
                             <div class="form-group">
-                                <label class="form-label" for="fe-type-select">Assignment Type</label>
-                                <select id="fe-type-select" class="form-select" onchange="pages.activityEdit.applyType()">
-                                    <option value="">No template (manual setup)</option>
-                                </select>
-                                <p class="form-helper">Select a type to auto-fill checkpoints, scoring, and defaults</p>
-                            </div>
-                            <div class="form-group">
                                 <label class="form-label" for="fe-name">Assignment Name *</label>
                                 <input type="text" id="fe-name" class="form-input" required placeholder="e.g., Bridge Design Challenge">
                             </div>
@@ -924,7 +806,7 @@
                     <div class="edit-section" id="edit-section-scoring">
                         <div class="edit-section__header" onclick="pages.activityEdit.toggleSection('scoring')">
                             <div>
-                                <h3>Scoring & Dates</h3>
+                                <h3>Dates</h3>
                                 <p class="edit-section__summary" id="edit-summary-scoring">Not configured</p>
                             </div>
                             <span class="edit-section__chevron">▶</span>
@@ -941,59 +823,7 @@
                                 </div>
                             </div>
 
-                            <div class="form-group">
-                                <label class="form-label">Scoring Method</label>
-                                <select id="fe-scoring-type" class="form-select" onchange="pages.activityEdit.toggleScoringFields()">
-                                    <option value="complete-incomplete">Complete / Incomplete</option>
-                                    <option value="points">Points</option>
-                                    <option value="rubric">Rubric</option>
-                                </select>
                             </div>
-
-                            <div class="form-group" id="fe-points-group">
-                                <label class="form-label">Total Points</label>
-                                <input type="number" id="fe-points" class="form-input" placeholder="100" min="0"
-                                    oninput="pages.activityEdit.syncPointsToMaxPoints()">
-                                <p class="form-helper">Used as the max-points value when pushing grades to Google Classroom.</p>
-                            </div>
-
-                            <div id="fe-rubric-group" style="display: none;">
-                                <div class="form-group">
-                                    <label class="form-label">Rubric Levels (comma-separated, best to worst)</label>
-                                    <input type="text" id="fe-rubric-levels" class="form-input" value="Advanced, Proficient, Developing, Beginning">
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label">Rubric Criteria</label>
-                                    <div id="fe-rubric-criteria"></div>
-                                    <button type="button" class="btn btn--secondary" style="margin-top: var(--space-xs);" onclick="pages.activityEdit.addRubricCriterion()">+ Add Criterion</button>
-                                </div>
-                            </div>
-
-                            <!-- Checkpoint Grading Weight -->
-                            <div id="fe-cp-grading-section" style="display: none; border-top: 1px solid var(--color-border); margin-top: var(--space-base); padding-top: var(--space-base);">
-                                <div class="form-group">
-                                    <label class="form-label">Checkpoint Grade Weight</label>
-                                    <div style="display: flex; align-items: center; gap: var(--space-sm);">
-                                        <input type="range" id="fe-cp-weight" min="0" max="100" value="0" style="flex: 1;" oninput="document.getElementById('fe-cp-weight-display').textContent = this.value + '%'">
-                                        <span id="fe-cp-weight-display" style="font-weight: 600; min-width: 40px;">0%</span>
-                                    </div>
-                                    <p class="form-helper">How much of the final grade comes from checkpoint completion.</p>
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label">Checkpoint Credit Mode</label>
-                                    <div style="display: flex; gap: var(--space-base);">
-                                        <label style="display: flex; align-items: center; gap: var(--space-xs); cursor: pointer;">
-                                            <input type="radio" name="fe-cp-grade-mode" value="completion" checked>
-                                            <span>Completion only</span>
-                                        </label>
-                                        <label style="display: flex; align-items: center; gap: var(--space-xs); cursor: pointer;">
-                                            <input type="radio" name="fe-cp-grade-mode" value="timeliness">
-                                            <span>Completion + Timeliness</span>
-                                        </label>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
                     </div>
 
                     <!-- ===================== SECTION 3: Checkpoints (collapsible) ===================== -->
@@ -1165,6 +995,13 @@
                                 <input type="text" id="fe-slides-url" class="form-input" placeholder="https://docs.google.com/presentation/d/.../edit?usp=sharing">
                                 <p class="form-helper">Link to the Google Slides workbook. The widget will embed this as a slideshow.</p>
                             </div>
+                            <div class="form-group">
+                                <label class="form-label">Instruction Steps</label>
+                                <div id="fe-instruction-steps-list"></div>
+                                <button type="button" class="btn btn--secondary btn--sm"
+                                    onclick="pages.activityEdit.addInstructionStep()">+ Add Step</button>
+                                <p class="form-helper">Shown as a step-by-step carousel when no Slides URL is set. Leave a role blank to hide it on that step.</p>
+                            </div>
                         </div>
 
                         <!-- ── Sub-group: Get Ready ── -->
@@ -1282,7 +1119,35 @@
                                 </div>
                             </div>
 
-                            <!-- Assignment selector + create -->
+                            <!-- Skill & PP Assignment Status -->
+                            <div id="fe-skill-link-status" style="display: none; padding: var(--space-base); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); margin-bottom: var(--space-base);">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-sm);">
+                                    <strong style="font-size: var(--font-size-body-small);">Skill & PP Assignments</strong>
+                                    <span id="fe-skill-link-summary" style="font-size: var(--font-size-caption); color: var(--color-text-secondary);"></span>
+                                </div>
+                                <!-- Grade Category Mapping -->
+                                <div style="display: flex; gap: var(--space-sm); flex-wrap: wrap; margin-bottom: var(--space-sm); padding-bottom: var(--space-sm); border-bottom: 1px solid var(--color-border);">
+                                    <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 160px;">
+                                        <label class="form-label" style="font-size: var(--font-size-caption);">Skills Category:</label>
+                                        <select id="fe-skills-grade-category" class="form-select" style="font-size: var(--font-size-body-small);" onchange="pages.activityEdit.saveGradeCategorySelection()">
+                                            <option value="">None (no category)</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 160px;">
+                                        <label class="form-label" style="font-size: var(--font-size-caption);">PP Category:</label>
+                                        <select id="fe-pp-grade-category" class="form-select" style="font-size: var(--font-size-body-small);" onchange="pages.activityEdit.saveGradeCategorySelection()">
+                                            <option value="">None (no category)</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div id="fe-skill-link-list" style="font-size: var(--font-size-body-small); margin-bottom: var(--space-sm);"></div>
+                                <div style="display: flex; gap: var(--space-sm); flex-wrap: wrap;">
+                                    <button type="button" class="btn btn--primary" id="fe-create-skill-assignments-btn" onclick="pages.activityEdit.createSkillAssignments()" style="font-size: var(--font-size-body-small);">Create Skill Assignments</button>
+                                    <button type="button" class="btn btn--secondary" id="fe-create-pp-assignment-btn" onclick="pages.activityEdit.createPPAssignment()" style="font-size: var(--font-size-body-small);">Create PP Assignment</button>
+                                </div>
+                            </div>
+
+                            <!-- Assignment selector + create (legacy — for manual linking) -->
                             <div class="form-group" id="fe-cw-group" style="display: none;">
                                 <label class="form-label">Assignment</label>
                                 <select id="fe-classroom-cw" class="form-input">
@@ -1370,15 +1235,6 @@
                                     <button type="button" class="btn btn--secondary" onclick="pages.activityEdit.addMaterial('driveFile')">+ Add Drive File</button>
                                     <button type="button" class="btn btn--secondary" onclick="pages.activityEdit.addMaterial('youtubeVideo')">+ Add YouTube</button>
                                 </div>
-                            </div>
-
-                            <!-- 11.6: Rubric sync -->
-                            <div class="form-group" id="fe-rubric-sync-group" style="display: none;">
-                                <label style="display: flex; align-items: center; gap: var(--space-xs); cursor: pointer;">
-                                    <input type="checkbox" id="fe-sync-rubric">
-                                    <span class="form-label" style="margin: 0;">Sync rubric to Classroom</span>
-                                </label>
-                                <p class="form-helper">Pushes this assignment's rubric criteria and levels to Google Classroom</p>
                             </div>
 
                             <!-- Google Form URL (existing, moved from modal) -->
@@ -1819,8 +1675,8 @@
                                         <input type="password" id="webhook-token" class="form-input" placeholder="your-secret-token-here" style="flex: 1;">
                                         <button class="btn btn--primary" onclick="pages.settings.saveWebhook('token')">Save</button>
                                     </div>
-                                </div>
-                                <div class="form-group">
+                                </div>                                
+                                <div class="form-group" style="margin-top: var(--space-base);">
                                     <label class="form-label">Daily Absence Summary:</label>
                                     <div style="display: flex; gap: var(--space-sm);">
                                         <input type="text" id="webhook-absent" class="form-input" placeholder="https://script.google.com/..." style="flex: 1;">
@@ -1851,6 +1707,24 @@
                                             <input type="time" id="auto-check-time-2" class="form-input" style="width: 140px;">
                                         </div>
                                         <button class="btn btn--primary" onclick="pages.settings.saveAutoCheckTimes()">Save Times</button>
+                                    </div>
+                                </div>
+                                <!-- Scheduled Grade Push -->
+                                <div style="margin-top: var(--space-lg); padding-top: var(--space-lg); border-top: 1px solid var(--color-border);">
+                                    <strong>Scheduled Grade Push to Classroom</strong>
+                                    <p style="font-size: var(--font-size-body-small); color: var(--color-text-secondary); margin-top: var(--space-xs); margin-bottom: var(--space-base);">
+                                        Automatically push skill grades and PP grades to Google Classroom at these times (app must be open).
+                                    </p>
+                                    <div style="display: flex; gap: var(--space-sm); flex-wrap: wrap; align-items: end;">
+                                        <div class="form-group" style="margin-bottom: 0;">
+                                            <label class="form-label">Push Time 1:</label>
+                                            <input type="time" id="auto-push-time-1" class="form-input" style="width: 140px;">
+                                        </div>
+                                        <div class="form-group" style="margin-bottom: 0;">
+                                            <label class="form-label">Push Time 2:</label>
+                                            <input type="time" id="auto-push-time-2" class="form-input" style="width: 140px;">
+                                        </div>
+                                        <button class="btn btn--primary" onclick="pages.settings.saveAutoPushTimes()">Save Times</button>
                                     </div>
                                 </div>
                             </div>
@@ -2527,13 +2401,6 @@
             <div class="modal__body">
                 <form id="activity-form">
                     <div class="form-group">
-                        <label class="form-label" for="activity-type-select">Assignment Type</label>
-                        <select id="activity-type-select" class="form-select" onchange="modals.applyAssignmentType()">
-                            <option value="">No template (manual setup)</option>
-                        </select>
-                        <p class="form-helper">Select a type to auto-fill checkpoints, scoring, and defaults</p>
-                    </div>
-                    <div class="form-group">
                         <label class="form-label" for="activity-name">Assignment Name *</label>
                         <input type="text" id="activity-name" class="form-input" required placeholder="e.g., Bridge Design Challenge">
                     </div>
@@ -2558,33 +2425,6 @@
                         <div class="form-group">
                             <label class="form-label" for="activity-end-date">End Date *</label>
                             <input type="date" id="activity-end-date" class="form-input" required>
-                        </div>
-                    </div>
-                    
-                    <div class="form-group">
-                        <div class="form-group">
-                        <label class="form-label">Scoring Method</label>
-                        <select id="activity-scoring-type" class="form-select" onchange="modals.toggleActivityScoringFields()">
-                            <option value="complete-incomplete">Complete / Incomplete</option>
-                            <option value="points">Points</option>
-                            <option value="rubric">Rubric</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group" id="activity-points-group">
-                        <label class="form-label">Total Points</label>
-                        <input type="number" id="activity-points" class="form-input" placeholder="100" min="0">
-                    </div>
-
-                    <div id="activity-rubric-group" style="display: none;">
-                        <div class="form-group">
-                            <label class="form-label">Rubric Levels (comma-separated, best to worst)</label>
-                            <input type="text" id="activity-rubric-levels" class="form-input" value="Advanced, Proficient, Developing, Beginning">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Rubric Criteria</label>
-                            <div id="activity-rubric-criteria"></div>
-                            <button type="button" class="btn btn--secondary" style="margin-top: var(--space-xs);" onclick="modals.addActivityRubricCriterion()">+ Add Criterion</button>
                         </div>
                     </div>
                     
@@ -2641,32 +2481,7 @@
                             <p class="form-helper">Sets the point value in Classroom. Your app's rubric handles the detailed scoring — Classroom just gets the final number.</p>
                         </div>
                     </div>
-                    <!-- Checkpoint Grading (6.6) -->
-                    <div id="checkpoint-grading-section" style="display: none; border-top: 1px solid var(--color-border); margin-top: var(--space-base); padding-top: var(--space-base);">
-                        <div class="form-group">
-                            <label class="form-label">Checkpoint Grade Weight</label>
-                            <div style="display: flex; align-items: center; gap: var(--space-sm);">
-                                <input type="range" id="activity-cp-weight" min="0" max="100" value="0" style="flex: 1;" oninput="document.getElementById('cp-weight-display').textContent = this.value + '%'">
-                                <span id="cp-weight-display" style="font-weight: 600; min-width: 40px;">0%</span>
-                            </div>
-                            <p class="form-helper">How much of the final grade comes from checkpoint completion. The rest comes from the assignment's scoring method (rubric, points, or complete/incomplete).</p>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Checkpoint Credit Mode</label>
-                            <div style="display: flex; gap: var(--space-base);">
-                                <label style="display: flex; align-items: center; gap: var(--space-xs); cursor: pointer;">
-                                    <input type="radio" name="cp-grade-mode" value="completion" checked>
-                                    <span>Completion only</span>
-                                </label>
-                                <label style="display: flex; align-items: center; gap: var(--space-xs); cursor: pointer;">
-                                    <input type="radio" name="cp-grade-mode" value="timeliness">
-                                    <span>Completion + Timeliness</span>
-                                </label>
-                            </div>
-                            <p class="form-helper">Timeliness mode: full credit if completed by the checkpoint's target date, half credit if late, zero if incomplete.</p>
-                        </div>
-                    </div>
-                    <div class="form-group"></div>
+                    <div class="form-group">
                         <label class="form-label">Checkpoints</label>
                         <div id="checkpoints-list" style="margin-bottom: var(--space-sm);">
                             <!-- Checkpoint items will be added here -->
@@ -2691,20 +2506,6 @@
             </div>
             <div class="modal__body">
                 <p id="quick-edit-name" style="font-weight: 600; margin-bottom: var(--space-base);"></p>
-
-                <div class="form-group">
-                    <label class="form-label">Scoring Method</label>
-                    <select id="qe-scoring-type" class="form-select">
-                        <option value="complete-incomplete">Complete / Incomplete</option>
-                        <option value="points">Points</option>
-                        <option value="rubric">Rubric</option>
-                    </select>
-                </div>
-
-                <div class="form-group" id="qe-points-group">
-                    <label class="form-label">Total Points</label>
-                    <input type="number" id="qe-points" class="form-input" min="0">
-                </div>
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-base);">
                     <div class="form-group">
