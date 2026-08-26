@@ -717,6 +717,14 @@ pages.settings = {
         const input2 = document.getElementById('auto-check-time-2');
         if (input1) input1.value = time1;
         if (input2) input2.value = time2;
+        
+        // Load auto-push times
+        const pushTime1 = localStorage.getItem('auto-push-time-1') || '';
+        const pushTime2 = localStorage.getItem('auto-push-time-2') || '';
+        const pushInput1 = document.getElementById('auto-push-time-1');
+        const pushInput2 = document.getElementById('auto-push-time-2');
+        if (pushInput1) pushInput1.value = pushTime1;
+        if (pushInput2) pushInput2.value = pushTime2;
     },
 
     // Called when the toggle is clicked
@@ -788,6 +796,19 @@ pages.settings = {
         localStorage.setItem('auto-check-time-1', time1);
         localStorage.setItem('auto-check-time-2', time2);
         ui.showToast(`Auto-check times saved${time1 ? ': ' + time1 : ''}${time2 ? ', ' + time2 : ''}`, 'success');
+    },    
+
+    saveAutoPushTimes: function() {
+        const time1 = document.getElementById('auto-push-time-1').value || '';
+        const time2 = document.getElementById('auto-push-time-2').value || '';
+        localStorage.setItem('auto-push-time-1', time1);
+        localStorage.setItem('auto-push-time-2', time2);
+        ui.showToast(`Auto-push times saved${time1 ? ': ' + time1 : ''}${time2 ? ', ' + time2 : ''}`, 'success');
+
+        // Restart the push timer with new times
+        if (typeof pages.dashboard !== 'undefined' && pages.dashboard.startAutoPushTimer) {
+            pages.dashboard.startAutoPushTimer();
+        }
     },
 
     exportData: async function() {
@@ -888,7 +909,8 @@ pages.settings = {
                 allActivities, allCheckpoints, allCompletions,
                 allSubmissions, allSkills, allSkillLevels,
                 allCertifications, allInventory, allAttendance,
-                allNotes, allTeams, allTeamMembers, niData
+                allNotes, allTeams, allTeamMembers,
+                allActivitySkills, niData
             ] = await Promise.all([
                 db.students.toArray(),
                 db.enrollments.toArray(),
@@ -905,6 +927,7 @@ pages.settings = {
                 db.notes.toArray(),
                 db.teams.toArray(),
                 db.teamMembers.toArray(),
+                db.activitySkills.toArray(),
                 getActiveNonInstructionalDays()
             ]);
 
@@ -946,8 +969,10 @@ pages.settings = {
             activities.forEach(a => {
                 const safeName = (a.name || 'Activity').replace(/,/g, ' ');
                 headers.push(`${safeName}: Status`);
-                headers.push(`${safeName}: Score`);
-                headers.push(`${safeName}: Score %`);
+                headers.push(`${safeName}: PP Rating`);
+                headers.push(`${safeName}: PP %`);
+                headers.push(`${safeName}: Skills Assessed`);
+                headers.push(`${safeName}: Mastery %`);
                 headers.push(`${safeName}: CP Done`);
                 headers.push(`${safeName}: CP Total`);
                 headers.push(`${safeName}: CP %`);
@@ -1005,7 +1030,9 @@ pages.settings = {
                 const studentSubMap = new Map(studentSubmissions.map(s => [s.activityId, s]));
                 const studentClassId = student.classId;
 
-                activities.forEach(activity => {
+                const ratingToScore = { 'Beginning': 25, 'Developing': 50, 'Proficient': 75, 'Advanced': 100 };
+
+                for (const activity of activities) {
                     const safeName = (activity.name || 'Activity').replace(/,/g, ' ');
                     const sub = studentSubMap.get(activity.id);
                     const actCheckpoints = allCheckpoints.filter(cp => cp.activityId === activity.id);
@@ -1013,53 +1040,39 @@ pages.settings = {
 
                     if (!isMyClass) {
                         row[`${safeName}: Status`] = '';
-                        row[`${safeName}: Score`] = '';
-                        row[`${safeName}: Score %`] = '';
+                        row[`${safeName}: PP Rating`] = '';
+                        row[`${safeName}: PP %`] = '';
+                        row[`${safeName}: Skills Assessed`] = '';
+                        row[`${safeName}: Mastery %`] = '';
                         row[`${safeName}: CP Done`] = '';
                         row[`${safeName}: CP Total`] = '';
                         row[`${safeName}: CP %`] = '';
                         row[`${safeName}: Feedback Sent`] = '';
-                        return;
+                        continue;
                     }
 
                     row[`${safeName}: Status`] = sub ? sub.status : 'not-started';
 
-                    let score = '';
-                    let scorePct = '';
-                    const maxPoints = activity.defaultPoints || 100;
+                    // PP Rating
+                    const ppRating = sub?.professionalPractice || '';
+                    row[`${safeName}: PP Rating`] = ppRating;
+                    row[`${safeName}: PP %`] = ratingToScore[ppRating] != null ? ratingToScore[ppRating] + '%' : '';
 
-                    if (sub) {
-                        if ((activity.checkpointGradeWeight || 0) > 0 && actCheckpoints.length > 0) {
-                            const result = calculateFinalGrade(activity, student.id, sub, actCheckpoints, allCompletions);
-                            score = Math.round(result.finalScore * maxPoints * 10) / 10;
-                            scorePct = Math.round(result.finalScore * 1000) / 10 + '%';
-                        } else {
-                            const scoringType = activity.scoringType || 'complete-incomplete';
-                            if (scoringType === 'points' && sub.score != null) {
-                                score = sub.score;
-                                scorePct = Math.round((sub.score / maxPoints) * 1000) / 10 + '%';
-                            } else if (scoringType === 'rubric' && sub.rubricScores && activity.rubric) {
-                                const levels = activity.rubric.levels || [];
-                                const criteria = activity.rubric.criteria || [];
-                                let total = 0, count = 0;
-                                criteria.forEach(c => {
-                                    const idx = levels.indexOf(sub.rubricScores[c.name]);
-                                    if (idx >= 0) { total += (levels.length - 1 - idx) / (levels.length - 1); count++; }
-                                });
-                                if (count > 0) {
-                                    const pct = total / count;
-                                    score = Math.round(pct * maxPoints * 10) / 10;
-                                    scorePct = Math.round(pct * 1000) / 10 + '%';
-                                }
-                            } else if (scoringType === 'complete-incomplete') {
-                                const isComplete = sub.status === 'graded' || sub.status === 'submitted';
-                                score = isComplete ? maxPoints : 0;
-                                scorePct = isComplete ? '100%' : '0%';
-                            }
+                    // Skills mastery
+                    const actSkills = allActivitySkills.filter(as => as.activityId === activity.id);
+                    let skillTotal = 0, skillCount = 0;
+                    for (const as of actSkills) {
+                        const level = await db.skillLevels
+                            .where('studentId').equals(student.id)
+                            .filter(sl => sl.skillId === as.skillId)
+                            .first();
+                        if (level && ratingToScore[level.level] != null) {
+                            skillTotal += ratingToScore[level.level];
+                            skillCount++;
                         }
                     }
-                    row[`${safeName}: Score`] = score;
-                    row[`${safeName}: Score %`] = scorePct;
+                    row[`${safeName}: Skills Assessed`] = skillCount > 0 ? skillCount : '';
+                    row[`${safeName}: Mastery %`] = skillCount > 0 ? Math.round(skillTotal / skillCount) + '%' : '';
 
                     if (actCheckpoints.length > 0) {
                         const studentCpDone = allCompletions.filter(c =>
@@ -1081,7 +1094,7 @@ pages.settings = {
                         (log.content || '').includes(activity.name)
                     );
                     row[`${safeName}: Feedback Sent`] = fbSent ? 'Yes' : 'No';
-                });
+                }
 
                 // --- Skills ---
                 const calcSkillMap = await getCalculatedSkillLevels(student.id);
@@ -2415,6 +2428,73 @@ pages.settings = {
         }
     },
 
+    // --- Draft instruction steps from existing guide data ---
+    generateInstructionSteps: function(guide) {
+        const steps = [];
+
+        const matList = (guide.requiredMaterials || [])
+            .map(m => m.name + (m.quantity ? ' (' + m.quantity + ')' : ''))
+            .join(', ');
+
+        // Opening step — always present
+        let readyBody = 'Set up your notebook and get your station ready before your team starts working.';
+        if ((guide.getReadyTasks || []).length > 0) {
+            readyBody += ' Your team needs to: ' + guide.getReadyTasks.join('; ') + '.';
+        }
+
+        steps.push({
+            title: 'Get Ready',
+            time: guide.getReadyTime || '5 min',
+            body: readyBody,
+            roles: {
+                leader: 'Check that everyone on your team has their notebook open and dated.',
+                recorder: 'Write the activity title and today\'s date at the top of your notebook page.',
+                materials: matList ? 'Collect from the materials station: ' + matList + '.' : '',
+                timekeeper: 'Get your team to the table and ready to work within ' + (guide.getReadyTime || '5 minutes') + '.'
+            }
+        });
+
+        // One step per checkpoint
+        (guide.checkpoints || []).forEach((cp, i) => {
+            let body = cp.description || '';
+            if (cp.lookFor) {
+                body += (body ? ' ' : '') + 'You are done with this step when: ' + cp.lookFor;
+            }
+
+            steps.push({
+                title: cp.title || ('Checkpoint ' + (i + 1)),
+                time: cp.estimatedTime || '',
+                body: body,
+                roles: {
+                    leader: 'Make sure your whole team agrees on the plan before anyone starts building.',
+                    recorder: 'Record what your team decides and why in your notebook.',
+                    materials: 'Keep your station organized and return anything your team is done using.',
+                    timekeeper: cp.estimatedTime
+                        ? 'This step should take about ' + cp.estimatedTime + '. Warn your team at the halfway point.'
+                        : 'Watch the clock and tell your team how much time is left.'
+                }
+            });
+        });
+
+        // Closing step — only when there's a checklist to close against
+        if ((guide.documentationChecklist || []).length > 0) {
+            steps.push({
+                title: 'Document and Submit',
+                time: '10 min',
+                body: 'Before you turn anything in, check that your notebook has all of these: '
+                    + guide.documentationChecklist.join('; ') + '.',
+                roles: {
+                    leader: 'Check every teammate\'s notebook against the list before your team submits.',
+                    recorder: 'Make sure every entry is dated and readable.',
+                    materials: 'Return all materials and leave your station cleaner than you found it.',
+                    timekeeper: 'Start cleanup with at least 10 minutes left in class.'
+                }
+            });
+        }
+
+        return steps;
+    },
+
     // --- Contract Guide JSON Import Pipeline ---
     importContractGuide: async function(mode, event) {
         try {
@@ -2550,6 +2630,9 @@ pages.settings = {
                 getReadyTime: guide.getReadyTime || null,
                 getReadyTasks: guide.getReadyTasks || [],
                 getReadyRoleTasks: guide.getReadyRoleTasks || null,
+                instructionSteps: (guide.instructionSteps && guide.instructionSteps.length > 0)
+                    ? guide.instructionSteps
+                    : pages.settings.generateInstructionSteps(guide),
                 conclusionQuestions: guide.conclusionQuestions || [],
                 conclusionSubmissionMethod: guide.conclusionSubmissionMethod || null,
                 assessmentQuestions: guide.assessmentQuestions || [],
@@ -2574,6 +2657,15 @@ pages.settings = {
             if (existingMatch) {
                 // Update existing — preserve class, dates, scoring, and other manual settings
                 activityId = existingMatch.id;
+                // Never overwrite refined steps with a fresh template draft.
+                if ((existingMatch.instructionSteps || []).length > 0
+                    && !(guide.instructionSteps && guide.instructionSteps.length > 0)) {
+                    delete activityData.instructionSteps;
+                }
+                // Preserve a manually renamed activity — the name is the Hub Sheet tab name.
+                if (existingMatch.name) {
+                    delete activityData.name;
+                }
                 await db.activities.update(activityId, activityData);
                 await logAction('update', 'activity', activityId, `Contract guide import: updated ${guide.contractCode}`);
             } else {
@@ -2591,13 +2683,13 @@ pages.settings = {
             const checkpointIdMap = {}; // Maps "C1-CP1" → database ID for portfolioPrompt linking
 
             if (guide.checkpoints && Array.isArray(guide.checkpoints)) {
-                // Delete existing checkpoints for this activity (fresh replace)
-                const existingCps = await db.checkpoints.where('activityId').equals(activityId).toArray();
-                for (const cp of existingCps) {
-                    await db.checkpoints.delete(cp.id);
-                }
+                // Match by position and update in place so checkpoint IDs — and the
+                // completion records pointing at them — survive the import.
+                const existingCps = (await db.checkpoints.where('activityId').equals(activityId).toArray())
+                    .sort((a, b) => (a.number || 0) - (b.number || 0));
 
-                for (const cp of guide.checkpoints) {
+                for (let i = 0; i < guide.checkpoints.length; i++) {
+                    const cp = guide.checkpoints[i];
                     // Resolve skillsAssessable names → IDs
                     const resolvedAssessable = [];
                     if (cp.skillsAssessable && Array.isArray(cp.skillsAssessable)) {
@@ -2642,7 +2734,24 @@ pages.settings = {
                         updatedAt: timestamp,
                     };
 
-                    const newCpId = await db.checkpoints.add(cpData);
+                    let newCpId;
+                    if (existingCps[i]) {
+                        newCpId = existingCps[i].id;
+                        delete cpData.createdAt;   // keep the original creation timestamp
+                        await db.checkpoints.update(newCpId, cpData);
+                    } else {
+                        newCpId = await db.checkpoints.add(cpData);
+                    }
+                    // Remove checkpoints the new guide no longer defines, and their completions.
+                    for (let x = guide.checkpoints.length; x < existingCps.length; x++) {
+                        const staleId = existingCps[x].id;
+                        const staleCompletions = await db.checkpointCompletions
+                            .where('checkpointId').equals(staleId).toArray();
+                        for (const c of staleCompletions) {
+                            await db.checkpointCompletions.delete(c.id);
+                        }
+                        await db.checkpoints.delete(staleId);
+                    }
                     checkpointCount++;
 
                     // Map the JSON checkpoint ID to the database ID
