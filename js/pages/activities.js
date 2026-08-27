@@ -921,10 +921,14 @@ pages.activityEdit = {
     },
 
     toggleScoringFields: function() {
-        const type = document.getElementById('fe-scoring-type').value;
+        const typeEl = document.getElementById('fe-scoring-type');
+        if (!typeEl) return;
+        const type = typeEl.value;
         // Total Points is always visible — it's the Classroom max-points value for every scoring type
-        document.getElementById('fe-points-group').style.display = '';
-        document.getElementById('fe-rubric-group').style.display = type === 'rubric' ? '' : 'none';
+        const pointsGroup = document.getElementById('fe-points-group');
+        if (pointsGroup) pointsGroup.style.display = '';
+        const rubricGroup = document.getElementById('fe-rubric-group');
+        if (rubricGroup) rubricGroup.style.display = type === 'rubric' ? '' : 'none';
     },
 
     // Keep fe-points and fe-classroom-max-points in sync — they represent the same value.
