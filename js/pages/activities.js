@@ -877,9 +877,9 @@ pages.activityEdit = {
     },
 
     updateAllSummaries: function() {
-        const scoringType = document.getElementById('fe-scoring-type').value;
-        const points = document.getElementById('fe-points').value;
-        const endDate = document.getElementById('fe-end-date').value;
+        const scoringType = document.getElementById('fe-scoring-type')?.value || '';
+        const points = document.getElementById('fe-points')?.value || '';
+        const endDate = document.getElementById('fe-end-date')?.value || '';
         const ptsLabel = points ? ` · ${points} pts` : '';
         let scoringSummary = scoringType === 'points' ? `Points${points ? ` · ${points} pts` : ' · ? pts'}` :
                             scoringType === 'rubric' ? `Rubric${ptsLabel}` :
