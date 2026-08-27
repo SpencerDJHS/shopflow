@@ -478,6 +478,26 @@ pages.activityEdit = {
         this._data = {};
         this._materials = [];
 
+        // Helper: safely set a property on an element by ID (no-op if missing).
+        function safeSet(id, prop, val) {
+            const el = document.getElementById(id);
+            if (el) {
+                el[prop] = val;
+            } else {
+                console.warn(`safeSet: element not found: ${id}`);
+            }
+        }
+
+        // Helper: hides an element by ID. style.display can't be written as a dotted path.
+        function safeHide(id) {
+            const el = document.getElementById(id);
+            if (el) {
+                el.style.display = 'none';
+            } else {
+                console.warn(`safeHide: element not found: ${id}`);
+            }
+        }
+
         // Populate class dropdown
         const classes = await db.classes.toArray();
         const classSelect = document.getElementById('fe-class-id');
