@@ -1911,7 +1911,9 @@ pages.activityEdit = {
                         title: cp.title || '',
                         description: cp.description || '',
                         suggestedDate: cp.suggestedDate || '',
-                        milestone: cp.milestone || ''
+                        milestone: cp.milestone || '',
+                        afterStep: (cp.afterStep === 0 || cp.afterStep) ? cp.afterStep : null,
+                        questions: cp.questions || []
                     })),
                     students: studentRows
                 }]
