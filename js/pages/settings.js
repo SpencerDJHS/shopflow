@@ -2670,11 +2670,14 @@ pages.settings = {
                 const preserveIfMissing = ['requiredTools', 'requiredMaterials', 'resourceLinks',
                     'slidesUrl', 'getReadyTasks', 'getReadyTime', 'getReadyRoleTasks',
                     'conclusionQuestions', 'conclusionSubmissionMethod', 'fusionGoals',
-                    'documentationChecklist', 'appendixItems', 'portfolioPrompts', 'contractBrief'];
+                    'documentationChecklist', 'appendixItems', 'portfolioPrompts', 'contractBrief',
+                    'learningGoals', 'assessmentQuestions', 'pacingMilestones', 'webxamCoverage'];
                 for (const field of preserveIfMissing) {
                     const incoming = guide[field];
                     const isEmpty = incoming === undefined || incoming === null
-                        || (Array.isArray(incoming) && incoming.length === 0);
+                        || (Array.isArray(incoming) && incoming.length === 0)
+                        || (typeof incoming === 'string' && incoming.trim() === '')
+                        || (typeof incoming === 'object' && !Array.isArray(incoming) && Object.keys(incoming).length === 0);
                     if (isEmpty) delete activityData[field];
                 }
                 await db.activities.update(activityId, activityData);
@@ -2735,6 +2738,7 @@ pages.settings = {
                         suggestedDate: cp.suggestedDate || null,
                         milestone: cp.milestone || '',
                         lookFor: cp.lookFor || '',
+                        afterStep: (cp.afterStep === 0 || cp.afterStep) ? cp.afterStep : null,
                         skillsAssessable: resolvedAssessable,
                         certificationDemos: resolvedCertDemos,
                         questions: (cp.questions || []).map(q => ({
@@ -2753,16 +2757,6 @@ pages.settings = {
                     } else {
                         newCpId = await db.checkpoints.add(cpData);
                     }
-                    // Remove checkpoints the new guide no longer defines, and their completions.
-                    for (let x = guide.checkpoints.length; x < existingCps.length; x++) {
-                        const staleId = existingCps[x].id;
-                        const staleCompletions = await db.checkpointCompletions
-                            .where('checkpointId').equals(staleId).toArray();
-                        for (const c of staleCompletions) {
-                            await db.checkpointCompletions.delete(c.id);
-                        }
-                        await db.checkpoints.delete(staleId);
-                    }
                     checkpointCount++;
 
                     // Map the JSON checkpoint ID to the database ID
@@ -2770,6 +2764,17 @@ pages.settings = {
                         checkpointIdMap[cp.id] = newCpId;
                     }
                     checkpointIdMap[cp.number] = newCpId;
+                }
+
+                // Remove checkpoints the new guide no longer defines, and their completions.
+                for (let x = guide.checkpoints.length; x < existingCps.length; x++) {
+                    const staleId = existingCps[x].id;
+                    const staleCompletions = await db.checkpointCompletions
+                        .where('checkpointId').equals(staleId).toArray();
+                    for (const c of staleCompletions) {
+                        await db.checkpointCompletions.delete(c.id);
+                    }
+                    await db.checkpoints.delete(staleId);
                 }
             }
 
