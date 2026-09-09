@@ -2193,11 +2193,20 @@ const modals = {
                                 assessmentQuestions: activity.assessmentQuestions || [],
                                 documentationChecklist: activity.documentationChecklist || [],
                                 appendixItems: activity.appendixItems || [],
+                                // Contract Brief (student-facing) — kept in parity with the per-activity sync in activities.js
+                                contractCode: activity.contractCode || '',
+                                contractBrief: activity.contractBrief || {},
+                                certificationsRequired: activity.certificationsRequired || [],
+                                certificationsAvailable: activity.certificationsAvailable || [],
+                                portfolioPrompts: activity.portfolioPrompts || [],
                                 checkpoints: checkpoints.map(cp => ({
                                     number: cp.number,
                                     title: cp.title || '',
                                     description: cp.description || '',
-                                    suggestedDate: cp.suggestedDate || ''
+                                    suggestedDate: cp.suggestedDate || '',
+                                    milestone: cp.milestone || '',
+                                    afterStep: (cp.afterStep === 0 || cp.afterStep) ? cp.afterStep : null,
+                                    questions: cp.questions || []
                                 })),
                                 students: studentRows
                             }]
