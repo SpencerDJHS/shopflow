@@ -195,7 +195,7 @@ pages.checkpoint = {
         try {
             const allTeams = await db.teams.toArray();
             const teams = allTeams
-                .filter(t => t.classId === this.selectedClass.id)
+                .filter(t => !t.deletedAt && t.classId === this.selectedClass.id)
                 .sort((a, b) => a.name.localeCompare(b.name));
 
             const container = document.getElementById('checkpoint-teams-list');
