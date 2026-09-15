@@ -561,12 +561,12 @@ const driveSyncPull = {
     checkOnLoad: async function() {
         const syncEnabled = localStorage.getItem('drive-sync-enabled') === 'true';
         const syncPassword = localStorage.getItem('drive-sync-password');
-        if (!syncEnabled || !syncPassword || !navigator.onLine) return;
+        if (!syncEnabled || !syncPassword || !navigator.onLine) return 'disabled';
 
         const webhookUrl = localStorage.getItem('webhook_absent') ||
                             localStorage.getItem('webhook_wildcat');
         const webhookToken = localStorage.getItem('webhook_token');
-        if (!webhookUrl || !webhookToken) return;
+        if (!webhookUrl || !webhookToken) return 'disabled';
 
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
                       (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -586,17 +586,17 @@ const driveSyncPull = {
             if (result.status !== 'success') {
                 if (result.status === 'no_data') {
                     console.log('Drive sync: no data from other device yet');
-                } else {
-                    console.warn('Drive sync pull issue:', result.message);
+                    return 'none';
                 }
-                return;
+                console.warn('Drive sync pull issue:', result.message);
+                return 'failed';
             }
 
             // Compare timestamps — only pull if remote is newer
             const lastReceived = localStorage.getItem('last-drive-sync-received');
             if (lastReceived && result.timestamp <= lastReceived) {
                 console.log('Drive sync: remote data is not newer, skipping');
-                return;
+                return 'none';
             }
 
             // Decrypt and validate before doing anything
@@ -607,21 +607,25 @@ const driveSyncPull = {
             } catch (decryptErr) {
                 console.error('Drive sync: decryption failed — password mismatch?', decryptErr);
                 ui.showToast('⚠️ Sync data found but decryption failed. Check that both devices use the same sync password.', 'error', 8000);
-                return;
+                return 'failed';
             }
 
             // Apply silently if idle, queue if a form is open
             if (driveSync.isIdle()) {
                 console.log('Drive sync: app is idle, applying pulled data silently');
                 await driveSync.applyPulledData(decryptedData);
+                return 'applied';
             } else {
                 console.log('Drive sync: form is open, queuing pulled data for later');
                 driveSync._pendingMerge = decryptedData;
+                driveSync.updateSyncStatusUI();
+                return 'queued';
             }
 
         } catch (err) {
             console.error('Drive sync pull failed:', err);
             // Fail silently — don't interrupt app load
+            return 'failed';
         }
     }
 };
