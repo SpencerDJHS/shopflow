@@ -547,10 +547,44 @@ window.addEventListener('online', () => {
         driveSync.push();
     }
 });
-function driveSyncNow() {
-    driveSync._dirty = true;
-    driveSync.push();
+async function driveSyncNow() {
     ui.showToast('Syncing...', 'info');
+
+    // ── Push first ──
+    const pushBefore = localStorage.getItem('last-drive-sync-push');
+    driveSync._dirty = true;
+    await driveSync.push();
+    const pushAfter = localStorage.getItem('last-drive-sync-push');
+    const pushOk = pushAfter && pushAfter !== pushBefore;
+    const pushMsg = pushOk ? '✅ Uploaded' : '❌ Upload failed';
+
+    // ── Then pull, using the same path as Check for Updates ──
+    let pullMsg;
+    let pullOk = true;
+    try {
+        const pullResult = await driveSyncPull.checkOnLoad();
+        if (pullResult === 'applied') {
+            pullMsg = '✅ Downloaded updates';
+        } else if (pullResult === 'none') {
+            pullMsg = '✅ Nothing new to download';
+        } else if (pullResult === 'queued') {
+            pullMsg = '⏳ Update received — applies when you close this form';
+        } else if (pullResult === 'disabled') {
+            pullMsg = '❌ Download skipped — sync not configured';
+            pullOk = false;
+        } else {
+            pullMsg = '❌ Download failed';
+            pullOk = false;
+        }
+    } catch (err) {
+        console.error('Sync Now: pull threw', err);
+        pullMsg = '❌ Download failed';
+        pullOk = false;
+    }
+
+    driveSync.updateSyncStatusUI();
+    const allOk = pushOk && pullOk;
+    ui.showToast(pushMsg + ' · ' + pullMsg, allOk ? 'success' : 'error', 8000);
 }
 
 const driveSyncPull = {
