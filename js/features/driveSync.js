@@ -552,12 +552,21 @@ async function driveSyncNow() {
 
     // ── Push first ──
     const pushBefore = localStorage.getItem('last-drive-sync-push');
-    driveSync._dirty = true;
-    await driveSync.push();
-    const pushAfter = localStorage.getItem('last-drive-sync-push');
+
+    // Auto-sync may already be pushing. Wait for it rather than calling it a failure.
+    const waitStart = Date.now();
+    while (driveSync._pushing && Date.now() - waitStart < 180000) {
+        await new Promise(r => setTimeout(r, 500));
+    }
+
+    let pushAfter = localStorage.getItem('last-drive-sync-push');
+    if (!pushAfter || pushAfter === pushBefore) {
+        driveSync._dirty = true;
+        await driveSync.push();
+        pushAfter = localStorage.getItem('last-drive-sync-push');
+    }
     const pushOk = pushAfter && pushAfter !== pushBefore;
     const pushMsg = pushOk ? '✅ Uploaded' : '❌ Upload failed';
-
     // ── Then pull, using the same path as Check for Updates ──
     let pullMsg;
     let pullOk = true;
