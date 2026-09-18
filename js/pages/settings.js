@@ -2352,7 +2352,7 @@ pages.settings = {
                     category: item.category || '',
                     quantity: item.quantity || 0,
                     threshold: 0,
-                    location: '',
+                    location: item.location || '',
                     itemNumber: item.itemNumber || '',
                     notes: item.notes || '',
                     createdAt: new Date().toISOString()
