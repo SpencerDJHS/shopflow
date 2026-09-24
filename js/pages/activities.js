@@ -473,8 +473,12 @@ pages.activities = {
 pages.activityEdit = {
     _data: null,
     _materials: [],
+    _formFor: null,      // EP24: the record this form was opened for (set by render)
+    _renderToken: 0,     // EP24: lets an older, slower render know it was replaced
 
     render: async function(activityId) {
+        const renderToken = ++this._renderToken;
+        this._formFor = null; // EP24: saving is blocked until this render finishes
         this._data = {};
         this._materials = [];
 
@@ -845,6 +849,16 @@ pages.activityEdit = {
             }
         });
 
+        // EP24: if a newer open replaced this one while it loaded, the screen may be mixed. Block saving.
+        if (renderToken !== this._renderToken) {
+            this._formFor = null;
+            return;
+        }
+        // EP24: create vs edit is decided here, and the form remembers exactly which record it shows.
+        this._formFor = activityId
+            ? { mode: 'edit', id: this._data.activity.id, name: this._data.activity.name, contractCode: this._data.activity.contractCode || null }
+            : { mode: 'create' };
+
         // If editing and has Classroom links, auto-expand that section
         if (activityId) {
             const activity = this._data.activity;
@@ -1054,6 +1068,30 @@ pages.activityEdit = {
         if (!classId) { ui.showToast('Please select a class', 'error'); return; }
         if (!startDate || !endDate) { ui.showToast('Start and end dates are required', 'error'); return; }
 
+        // EP24 guard: write only to the record this form was opened for; never fall back to creating.
+        const formFor = this._formFor;
+        const blocked = (why) => ui.showToast('Save blocked — nothing was saved. ' + why + ' Close this form and open Full Edit again.', 'error', 10000);
+        if (!formFor) { blocked('This form did not finish loading.'); return; }
+        if (formFor.mode === 'edit') {
+            if (!formFor.id) { blocked('The form lost track of which assignment it is editing.'); return; }
+            const target = await db.activities.get(formFor.id);
+            if (!target || target.name !== formFor.name || (target.contractCode || null) !== formFor.contractCode) {
+                console.error('EP24 save blocked: record missing or changed', { formFor, target });
+                blocked('The assignment on file no longer matches what this form loaded.');
+                return;
+            }
+            const targetCpIds = new Set((await db.checkpoints.where('activityId').equals(formFor.id).toArray()).map(cp => cp.id));
+            const foreignRow = Array.from(document.querySelectorAll('.fe-checkpoint-row'))
+                .some(row => { const cpId = parseInt(row.dataset.cpId); return cpId && !targetCpIds.has(cpId); });
+            if (foreignRow) {
+                console.error('EP24 save blocked: checkpoint rows belong to another assignment', { formFor });
+                blocked('The checkpoints on screen belong to a different assignment.');
+                return;
+            }
+        } else if (formFor.mode !== 'create') {
+            blocked('Unknown form mode.');
+            return;
+        }
         try {
             const activityData = {
                 name,
@@ -1147,10 +1185,10 @@ pages.activityEdit = {
 
             // --- Save the activity ---
             let activityId;
-            if (state.editingActivityId) {
+            if (formFor.mode === 'edit') {
                 activityData.updatedAt = new Date().toISOString();
-                await db.activities.update(state.editingActivityId, activityData);
-                activityId = state.editingActivityId;
+                await db.activities.update(formFor.id, activityData);
+                activityId = formFor.id;
                 logAction('update', 'activity', activityId, 'Full edit: ' + name);
             } else {
                 activityData.createdAt = new Date().toISOString();
@@ -1177,8 +1215,8 @@ pages.activityEdit = {
             state._classroomPendingCreate = {};
             state._classroomLinksTemp = {};
 
-            ui.showToast(state.editingActivityId ? 'Assignment updated' : 'Assignment created', 'success');
-
+            ui.showToast(formFor.mode === 'edit' ? 'Assignment updated' : 'Assignment created', 'success');
+            this._formFor = null;
             state.editingActivityId = null;
             state.selectedActivity = activityId;
             router.navigate('activity-detail');
@@ -1739,7 +1777,7 @@ pages.activityEdit = {
 
     // ── Sync to Hub (Sprint 17) ──
     syncToHub: async function() {
-        const activityId = state.editingActivityId;
+        const activityId = this._formFor?.mode === 'edit' ? this._formFor.id : null; // EP24
         if (!activityId) { ui.showToast('Save the activity first', 'error'); return; }
 
         const webhook = localStorage.getItem('webhook_wildcat');
