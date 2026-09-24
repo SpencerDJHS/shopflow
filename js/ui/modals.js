@@ -1123,23 +1123,6 @@ const modals = {
             return;
         }
 
-        // EP24 guard: write only to the record this modal was opened for; never fall back to creating.
-        const formFor = this._activityFormFor;
-        const blocked = (why) => ui.showToast('Save blocked — nothing was saved. ' + why + ' Close this window and open it again.', 'error', 10000);
-        if (!formFor) { blocked('This form did not finish loading.'); return; }
-        if (formFor.mode === 'edit') {
-            if (!formFor.id) { blocked('The form lost track of which assignment it is editing.'); return; }
-            const target = await db.activities.get(formFor.id);
-            if (!target || target.name !== formFor.name || (target.contractCode || null) !== formFor.contractCode) {
-                console.error('EP24 modal save blocked: record missing or changed', { formFor, target });
-                blocked('The assignment on file no longer matches what this form loaded.');
-                return;
-            }
-        } else if (formFor.mode !== 'create') {
-            blocked('Unknown form mode.');
-            return;
-        }
-
         // Get checkpoint data
         const checkpointFields = document.querySelectorAll('.checkpoint-field');
         const checkpoints = [];
@@ -1148,6 +1131,7 @@ const modals = {
             const suggestedDate = field.querySelector('.checkpoint-suggested-date').value;
             
             // Gather structured QA pairs
+
             const qaRows = field.querySelectorAll('.checkpoint-qa-row');
             const questions = [];
             qaRows.forEach(row => {
