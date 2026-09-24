@@ -583,6 +583,7 @@ const modals = {
     // Activity modal functions
     showAddActivity: async function() {
         state.editingActivityId = null;
+        this._activityFormFor = { mode: 'create' }; // EP24
         document.getElementById('activity-modal-title').textContent = 'Create Assignment';
         document.getElementById('activity-form').reset();
         document.getElementById('checkpoints-list').innerHTML = '';
@@ -688,11 +689,13 @@ const modals = {
 
     showEditActivity: async function(activityId) {
         state.editingActivityId = activityId;
+        this._activityFormFor = null; // EP24: set below once the record is loaded
         document.getElementById('activity-modal-title').textContent = 'Edit Assignment';
         
         try {
             const activity = await db.activities.get(activityId);
             if (activity) {
+                modals._activityFormFor = { mode: 'edit', id: activity.id, name: activity.name, contractCode: activity.contractCode || null }; // EP24
                 document.getElementById('activity-name').value = activity.name;
                 document.getElementById('activity-description').value = activity.description || '';
                 // Populate and pre-select class dropdown
@@ -1024,6 +1027,7 @@ const modals = {
         ui.hideModal('modal-activity');
         document.getElementById('activity-form').reset();
         state.editingActivityId = null;
+        this._activityFormFor = null; // EP24
     },
 
     addCheckpointField: function(title = '', questions = '', suggestedDate = '') {
@@ -1102,6 +1106,40 @@ const modals = {
             return;
         }
         
+        // EP24 guard: write only to the record this modal was opened for; never fall back to creating.
+        const formFor = this._activityFormFor;
+        const blocked = (why) => ui.showToast('Save blocked — nothing was saved. ' + why + ' Close this window and open it again.', 'error', 10000);
+        if (!formFor) { blocked('This form did not finish loading.'); return; }
+        if (formFor.mode === 'edit') {
+            if (!formFor.id) { blocked('The form lost track of which assignment it is editing.'); return; }
+            const target = await db.activities.get(formFor.id);
+            if (!target || target.name !== formFor.name || (target.contractCode || null) !== formFor.contractCode) {
+                console.error('EP24 modal save blocked: record missing or changed', { formFor, target });
+                blocked('The assignment on file no longer matches what this form loaded.');
+                return;
+            }
+        } else if (formFor.mode !== 'create') {
+            blocked('Unknown form mode.');
+            return;
+        }
+
+        // EP24 guard: write only to the record this modal was opened for; never fall back to creating.
+        const formFor = this._activityFormFor;
+        const blocked = (why) => ui.showToast('Save blocked — nothing was saved. ' + why + ' Close this window and open it again.', 'error', 10000);
+        if (!formFor) { blocked('This form did not finish loading.'); return; }
+        if (formFor.mode === 'edit') {
+            if (!formFor.id) { blocked('The form lost track of which assignment it is editing.'); return; }
+            const target = await db.activities.get(formFor.id);
+            if (!target || target.name !== formFor.name || (target.contractCode || null) !== formFor.contractCode) {
+                console.error('EP24 modal save blocked: record missing or changed', { formFor, target });
+                blocked('The assignment on file no longer matches what this form loaded.');
+                return;
+            }
+        } else if (formFor.mode !== 'create') {
+            blocked('Unknown form mode.');
+            return;
+        }
+
         // Get checkpoint data
         const checkpointFields = document.querySelectorAll('.checkpoint-field');
         const checkpoints = [];
@@ -1219,7 +1257,7 @@ const modals = {
                 state._classroomPendingCreate = {};
             }
 
-            if (state.editingActivityId) {
+            if (formFor.mode === 'edit') {
                 activityData.updatedAt = new Date().toISOString();
             } else {
                 activityData.createdAt = new Date().toISOString();
@@ -1227,10 +1265,10 @@ const modals = {
             
             let activityId;
 
-            if (state.editingActivityId) {
-                // Update existing activity
-                await db.activities.update(state.editingActivityId, activityData);
-                activityId = state.editingActivityId;
+            if (formFor.mode === 'edit') {
+                // Update existing activity (EP24: only the record this modal was opened for)
+                await db.activities.update(formFor.id, activityData);
+                activityId = formFor.id;
                 driveSync.markDirty();
                 
                 // Load existing checkpoints
