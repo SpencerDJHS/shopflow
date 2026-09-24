@@ -504,6 +504,7 @@ pages.activityEdit = {
 
         // Populate class dropdown
         const classes = await db.classes.toArray();
+        if (renderToken !== this._renderToken) return; // EP24: a newer open replaced this one
         const classSelect = document.getElementById('fe-class-id');
         classSelect.innerHTML = '<option value="">Select Class...</option>';
         classes.forEach(c => {
@@ -512,12 +513,14 @@ pages.activityEdit = {
 
         // Populate standards checkboxes
         const standards = await db.standards.toArray();
+        if (renderToken !== this._renderToken) return; // EP24
         const standardsDiv = document.getElementById('fe-standards-checkboxes');
         standardsDiv.innerHTML = standards.length === 0 ? '<p class="form-helper">No standards defined</p>' :
             standards.map(s => `<label style="display: block; padding: 2px 0;"><input type="checkbox" value="${s.id}" class="fe-standard-cb"> ${escapeHtml(s.code)} — ${escapeHtml(s.description)}</label>`).join('');
 
         // Populate skills checkboxes
         const skills = await db.skills.toArray();
+        if (renderToken !== this._renderToken) return; // EP24
         const skillsDiv = document.getElementById('fe-skills-checkboxes');
         skillsDiv.innerHTML = skills.length === 0 ? '<p class="form-helper">No skills defined</p>' :
             skills.map(s => `<label style="display: block; padding: 2px 0;"><input type="checkbox" value="${s.id}" class="fe-skill-cb"> ${escapeHtml(s.name)}</label>`).join('');
@@ -526,6 +529,7 @@ pages.activityEdit = {
             // --- EDIT MODE ---
             document.getElementById('activity-edit-title').textContent = 'Edit Assignment';
             const activity = await db.activities.get(activityId);
+            if (renderToken !== this._renderToken) return; // EP24
             if (!activity) { router.navigate('activities'); return; }
             this._data.activity = activity;
 
@@ -572,12 +576,14 @@ pages.activityEdit = {
 
             // Load checkpoints
             const checkpoints = await db.checkpoints.where('activityId').equals(activityId).toArray();
+            if (renderToken !== this._renderToken) return; // EP24
             checkpoints.sort((a, b) => a.number - b.number);
             this._data.checkpoints = checkpoints;
             this.renderCheckpoints(checkpoints);
 
             // Check linked standards
             const linkedStandards = await db.activityStandards.where('activityId').equals(activityId).toArray();
+            if (renderToken !== this._renderToken) return; // EP24
             linkedStandards.forEach(ls => {
                 const cb = standardsDiv.querySelector(`input[value="${ls.standardId}"]`);
                 if (cb) cb.checked = true;
@@ -585,6 +591,7 @@ pages.activityEdit = {
 
             // Check linked skills
             const linkedSkills = await db.activitySkills.where('activityId').equals(activityId).toArray();
+            if (renderToken !== this._renderToken) return; // EP24
             linkedSkills.forEach(ls => {
                 const cb = skillsDiv.querySelector(`input[value="${ls.skillId}"]`);
                 if (cb) cb.checked = true;
