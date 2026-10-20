@@ -1205,7 +1205,8 @@ const tests = [
             const ipad = await openApp(browser, base, { stub, localStorageInit: ls });
             await ipad.page.evaluate(() => { Object.defineProperty(navigator, 'userAgent', { get: () => 'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)' }); });
             await seedFakeData(ipad.page);
-            await ipad.page.evaluate(cid => db.settings.put({ key: 'mastery-mode-' + cid, value: 'off' }), ids.classId);   // an old row with no timestamps
+            // An old row with no timestamps, written the way data from before 3-17 sits in the database (the hooks would stamp a new write)
+            await ipad.page.evaluate(cid => db.transaction('rw', db.settings, async () => { if (typeof syncHooks !== 'undefined') syncHooks.markBulk(); await db.settings.put({ key: 'mastery-mode-' + cid, value: 'off' }); }), ids.classId);
             await pc.page.evaluate(async () => { driveSync._dirty = true; await driveSync.push(); });
             await ipad.page.evaluate(() => driveSyncPull.checkOnLoad());
             assert(await ipad.page.evaluate(cid => getClassMasteryMode(cid), ids.classId) === 'weighted-average', 'the switch did not reach the iPad');
@@ -2589,6 +2590,80 @@ const tests = [
         }
     },
     {
+        name: 'restore: a restored snapshot survives the next sync on both devices; a restored deleted item survives too; old snapshots are upgraded (3-18)',
+        fn: async ({ browser, base }) => {
+            const stub = new WebhookStub();
+            const ls = { webhook_wildcat: 'https://script.google.com/macros/s/TEST/exec', webhook_token: 'test-token', 'drive-sync-enabled': 'true', 'drive-sync-password': 'test-sync-pass' };
+            const pc = await openApp(browser, base, { stub, localStorageInit: ls });
+            const ids = await seedFakeData(pc.page);
+            const ipad = await openApp(browser, base, { stub, localStorageInit: ls });
+            await ipad.page.evaluate(() => { Object.defineProperty(navigator, 'userAgent', { get: () => 'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)' }); });
+            await seedFakeData(ipad.page);
+            for (let i = 0; i < 100 && !stub.callsFor('load_from_drive').some(c => c.body.requestingDevice === 'iPad'); i++) await ipad.page.waitForTimeout(100);
+            await ipad.page.waitForTimeout(300);
+            const push = p => p.evaluate(async () => { driveSync._dirty = true; return driveSync.push(); });
+            const pull = p => p.evaluate(() => driveSyncPull.checkOnLoad());
+            const both = async () => { await push(pc.page); await pull(ipad.page); await push(ipad.page); await pull(pc.page); };
+            const state = p => p.evaluate(async s0 => {
+                const all = await db.students.toArray();
+                return { live: all.filter(s => !s.deletedAt).length, first: (await db.students.get(s0)).firstName };
+            }, ids.studentIds[0]);
+            await both();
+            // The snapshot: 4 fake students
+            const backupId = await pc.page.evaluate(() => autoBackup.saveSafety('Fake snapshot'));
+            // After it: a fifth student, and a rename; both devices have them
+            await pc.page.evaluate(async s0 => {
+                await db.students.add({ firstName: 'Fake', lastName: 'Later', name: 'Fake Later', status: 'active', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+                await db.students.update(s0, { firstName: 'Renamed', updatedAt: new Date().toISOString() });
+            }, ids.studentIds[0]);
+            await both();
+            const before = { pc: await state(pc.page), ipad: await state(ipad.page) };
+            // Restore the snapshot on the PC (the same steps as the Restore button, without the reload)
+            const uploadsBefore = stub.callsFor('save_to_drive').length;
+            const downloadsBefore = stub.callsFor('load_from_drive').length;
+            const summary = await pc.page.evaluate(async id => autoBackup.restoreData(await backupDb.backups.get(id)), backupId);
+            const afterRestore = await state(pc.page);
+            const uploadsDuring = stub.callsFor('save_to_drive').length - uploadsBefore;
+            const downloadsDuring = stub.callsFor('load_from_drive').length - downloadsBefore;
+            await pull(ipad.page); await push(ipad.page); await pull(pc.page); await both();
+            const after = { pc: await state(pc.page), ipad: await state(ipad.page) };
+            // Deleted Items → Restore survives the other device's older deletion
+            await pc.page.evaluate(async sid => { await db.students.update(sid, { deletedAt: new Date().toISOString(), status: 'deleted' }); }, ids.studentIds[1]);
+            await both();
+            await new Promise(r => setTimeout(r, 20));
+            await pc.page.evaluate(sid => pages.settings.restoreItem('students', sid), ids.studentIds[1]);
+            await both();
+            const undeleted = {
+                pc: await pc.page.evaluate(sid => db.students.get(sid).then(s => !s.deletedAt), ids.studentIds[1]),
+                ipad: await ipad.page.evaluate(sid => db.students.get(sid).then(s => !s.deletedAt), ids.studentIds[1])
+            };
+            // An old snapshot (Novice levels, name-only students) is upgraded on the way in
+            const migrated = await pc.page.evaluate(() => {
+                const m = autoBackup.migrateSnapshot({ skillLevels: [{ id: 1, level: 'Novice' }], students: [{ id: 9, name: 'Fake Oldname Student' }] });
+                return { level: m.skillLevels[0].level, first: m.students[0].firstName, last: m.students[0].lastName };
+            });
+            const noDataIndex = await pc.page.evaluate(() => !backupDb.backups.schema.idxByName.data);
+            // A failed Auto-Backup says so
+            const failed = await pc.page.evaluate(async () => {
+                const toasts = []; const orig = ui.showToast.bind(ui); ui.showToast = (m, t) => { toasts.push({ m, t }); };
+                const add = backupDb.backups.add; backupDb.backups.add = () => Promise.reject(new Error('Fake quota exceeded'));
+                const ok = await autoBackup.save('noon');
+                backupDb.backups.add = add; ui.showToast = orig;
+                return { ok, toast: toasts.find(x => /Auto-Backup failed/.test(x.m)), stored: localStorage.getItem('auto-backup-last-failure') };
+            });
+            assert(before.pc.live === 5 && before.ipad.live === 5 && before.ipad.first === 'Renamed', 'setup: ' + JSON.stringify(before));
+            assert(afterRestore.live === 4 && afterRestore.first === 'Ada' && summary.keptAsDeleted === 1, 'restore on the PC: ' + JSON.stringify({ afterRestore, summary }));
+            assert(summary.uploaded === true && uploadsDuring === 1 && downloadsDuring === 0, 'restore uploads once and downloads nothing: ' + JSON.stringify({ summary, uploadsDuring, downloadsDuring }));
+            assert(after.pc.live === 4 && after.ipad.live === 4 && after.pc.first === 'Ada' && after.ipad.first === 'Ada', 'the restore did not survive syncing: ' + JSON.stringify(after));
+            assert(undeleted.pc && undeleted.ipad, 'a restored deleted student was deleted again by the sync: ' + JSON.stringify(undeleted));
+            assert(migrated.level === 'Beginning' && migrated.first === 'Fake' && migrated.last === 'Oldname Student', 'old snapshot: ' + JSON.stringify(migrated));
+            assert(noDataIndex, 'the backup database still indexes the whole snapshot');
+            assert(failed.ok === false && failed.toast && failed.toast.t === 'warning' && /Fake quota exceeded/.test(failed.stored || ''), 'Auto-Backup failure: ' + JSON.stringify(failed));
+            assert(real(pc.errors).length === 0 && real(ipad.errors).length === 0, 'page errors: ' + real(pc.errors).concat(real(ipad.errors)).join(' | '));
+            await pc.context.close(); await ipad.context.close();
+        }
+    },
+    {
         name: 'sync: Sync Now downloads before it uploads, and its result stays on the sync card (1-14)',
         fn: async ({ browser, base }) => {
             const stub = new WebhookStub();
@@ -2884,12 +2959,16 @@ const tests = [
             assert(after.version === 30 && !after.indexes.includes('data'), 'not upgraded: ' + JSON.stringify(after));
             assert(upgraded.count === 3 && upgraded.labels.join('|') === 'Fake snapshot 0|Fake snapshot 1|Fake snapshot 2', 'snapshots after the upgrade: ' + JSON.stringify(upgraded));
 
-            // Restore the newest snapshot: the latecomer goes, the seeded students stay
+            // Restore the newest snapshot: the seeded students stay, and the latecomer leaves the live list.
+            // Since 3-18 (#34) a record made after the snapshot is kept as deleted (Deleted Items can bring it back),
+            // so count the live students and check the latecomer is there, deleted.
             const newestId = await page.evaluate(async () => (await backupDb.backups.orderBy('createdAt').last()).id);
             await Promise.all([page.waitForNavigation({ timeout: 15000 }), page.evaluate(id => autoBackup.restore(id), newestId)]);
             await waitForStartup(page);
-            const students = await page.evaluate(() => db.students.count());
-            assert(students === studentIds.length, `after Restore: ${students} students, expected ${studentIds.length}`);
+            const students = await page.evaluate(async () => (await db.students.toArray()).filter(s => !s.deletedAt).length);
+            assert(students === studentIds.length, `after Restore: ${students} live students, expected ${studentIds.length}`);
+            const latecomer = await page.evaluate(async () => (await db.students.toArray()).filter(s => s.lastName === 'Latecomer').map(s => !!s.deletedAt));
+            assert(latecomer.length === 1 && latecomer[0] === true, 'the latecomer is not kept as deleted: ' + JSON.stringify(latecomer));
             const safety = await page.evaluate(async () => (await backupDb.backups.orderBy('createdAt').last()).slot);
             assert(safety === 'safety', 'Restore did not keep a safety snapshot first: ' + safety);
             assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
@@ -3912,6 +3991,118 @@ const tests = [
             await page.waitForLoadState('load');
             assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
             await context.close();
+        }
+    },
+    {
+        name: 'sync reliability: settings, class and note edits written without updatedAt reach the other device; differing settings = 0; pulls keep timestamps (3-17)',
+        fn: async ({ browser, base }) => {
+            const stub = new WebhookStub();
+            const ls = { webhook_wildcat: 'https://script.google.com/macros/s/TEST/exec', webhook_token: 'test-token', 'drive-sync-enabled': 'true', 'drive-sync-password': 'test-sync-pass' };
+            const pc = await openApp(browser, base, { stub, localStorageInit: ls });
+            const ids = await seedFakeData(pc.page);
+            const ipad = await openApp(browser, base, { stub, localStorageInit: ls });
+            await ipad.page.evaluate(() => { Object.defineProperty(navigator, 'userAgent', { get: () => 'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)' }); });
+            await seedFakeData(ipad.page);
+            for (let i = 0; i < 100 && !stub.callsFor('load_from_drive').some(c => c.body.requestingDevice === 'iPad'); i++) await ipad.page.waitForTimeout(100);
+            await ipad.page.waitForTimeout(300);
+            const push = p => p.evaluate(async () => { driveSync._dirty = true; return driveSync.push(); });
+            const pull = p => p.evaluate(() => driveSyncPull.checkOnLoad());
+            // Line both devices up, and give the PC a note the iPad also has
+            const noteId = await pc.page.evaluate(sid => db.notes.add({ entityType: 'student', entityId: sid, content: 'Fake note', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }), ids.studentIds[0]);
+            await push(pc.page); await pull(ipad.page); await push(ipad.page); await pull(pc.page);
+            // The PC changes things the way the app's screens do: no updatedAt, no markDirty
+            const dirty = await pc.page.evaluate(async ({ classId, noteId }) => {
+                driveSync._dirty = false;
+                await db.settings.put({ key: 'period-year-map', value: { 1: classId, 2: classId } });
+                await db.settings.put({ key: 'skill-categories', value: ['Fake A', 'Fake B'] });
+                await db.settings.put({ key: 'active-school-year', value: '2026-2027' });
+                await db.settings.put({ key: 'last-manual-export', value: 'PC-ONLY' });
+                await db.classes.update(classId, { name: 'Fake Renamed Class' });
+                await db.notes.update(noteId, { content: 'Fake note, edited on the PC' });
+                return driveSync._dirty;
+            }, { classId: ids.classId, noteId });
+            await ipad.page.evaluate(() => db.transaction('rw', db.settings, async () => { if (typeof syncHooks !== 'undefined') syncHooks.markBulk(); await db.settings.put({ key: 'last-manual-export', value: 'IPAD-ONLY' }); }));
+            await push(pc.page);
+            await pull(ipad.page);
+            const settingsOf = p => p.evaluate(() => db.settings.toArray().then(rows => Object.fromEntries(rows.filter(r => !['last-manual-export', 'anon-id-counter'].includes(r.key)).map(r => [r.key, JSON.stringify(r.value)]))));
+            const [a, b] = [await settingsOf(pc.page), await settingsOf(ipad.page)];
+            const differing = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter(k => a[k] !== b[k]);
+            const onIpad = await ipad.page.evaluate(async ({ classId, noteId }) => ({
+                className: (await db.classes.get(classId)).name,
+                note: (await db.notes.get(noteId)).content,
+                exportAt: (await db.settings.get('last-manual-export')).value,
+                mapStamp: (await db.settings.get('period-year-map')).updatedAt
+            }), { classId: ids.classId, noteId });
+            const pcMapStamp = await pc.page.evaluate(() => db.settings.get('period-year-map').then(r => r.updatedAt));
+            // And back: the iPad renames the flex period
+            await ipad.page.evaluate(() => db.settings.put({ key: 'flex-period-name', value: 'Fake Flex' }));
+            await push(ipad.page); await pull(pc.page);
+            const back = await pc.page.evaluate(() => db.settings.get('flex-period-name').then(r => r && r.value));
+            assert(dirty === true, 'a change made without markDirty was not queued for upload');
+            assert(differing.length === 0, 'settings that differ after the sync: ' + differing.join(', '));
+            assert(onIpad.className === 'Fake Renamed Class' && onIpad.note === 'Fake note, edited on the PC', 'class/note edits: ' + JSON.stringify(onIpad));
+            assert(onIpad.exportAt === 'IPAD-ONLY', "the PC's last-export time replaced the iPad's own");
+            assert(pcMapStamp && onIpad.mapStamp === pcMapStamp, 'the pull re-stamped a pulled record: ' + JSON.stringify({ pc: pcMapStamp, ipad: onIpad.mapStamp }));
+            assert(back === 'Fake Flex', 'the iPad\'s setting did not reach the PC: ' + back);
+            assert(real(pc.errors).length === 0 && real(ipad.errors).length === 0, 'page errors: ' + real(pc.errors).concat(real(ipad.errors)).join(' | '));
+            await pc.context.close(); await ipad.context.close();
+        }
+    },
+    {
+        name: 'alerts (i261): a dashboard visit rebuilds the alerts without marking the data dirty, so no upload starts',
+        fn: async ({ browser, base }) => {
+            const stub = new WebhookStub();
+            const ls = { webhook_wildcat: 'https://script.google.com/macros/s/TEST/exec', webhook_token: 'test-token', 'drive-sync-enabled': 'true', 'drive-sync-password': 'test-sync-pass' };
+            const { context, page, errors } = await openApp(browser, base, { stub, localStorageInit: ls });
+            const ids = await seedFakeData(page);
+            // An assignment that ended in January, nobody done: one overdue alert per fake student
+            await page.evaluate(id => db.activities.update(id, { endDate: '2026-01-02' }), ids.activityId);
+            // A first visit writes real data once (in-progress submissions); measure the visits after it
+            await page.evaluate(() => router.navigate('dashboard'));
+            await page.waitForTimeout(1200);
+            const before = await page.evaluate(() => { clearTimeout(driveSync._timer); driveSync._dirty = false; return driveSync._changeSeq; });
+            const uploadsBefore = stub.callsFor('save_to_drive').length;
+            for (let i = 0; i < 3; i++) {
+                await page.evaluate(() => router.navigate('dashboard'));
+                await page.waitForTimeout(800);
+                await page.evaluate(() => alertsEngine.refresh());
+            }
+            const after = await page.evaluate(async () => ({ dirty: driveSync._dirty, seq: driveSync._changeSeq, alerts: await db.alerts.count(), stamped: (await db.alerts.toArray()).filter(a => a.updatedAt).length }));
+            assert(after.alerts === 4, 'expected 4 fake overdue alerts, found ' + after.alerts);
+            assert(after.dirty === false && after.seq === before, 'rebuilding the alerts marked the data dirty: ' + JSON.stringify({ before, after }));
+            assert(after.stamped === 0, after.stamped + ' alerts were stamped with updatedAt');
+            assert(stub.callsFor('save_to_drive').length === uploadsBefore, 'a dashboard visit started an upload');
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: "alerts (i261): a pull doesn't add the other device's alerts on top of this device's own",
+        fn: async ({ browser, base }) => {
+            const stub = new WebhookStub();
+            const ls = { webhook_wildcat: 'https://script.google.com/macros/s/TEST/exec', webhook_token: 'test-token', 'drive-sync-enabled': 'true', 'drive-sync-password': 'test-sync-pass' };
+            const pc = await openApp(browser, base, { stub, localStorageInit: ls });
+            const ids = await seedFakeData(pc.page);
+            const ipad = await openApp(browser, base, { stub, localStorageInit: ls });
+            await ipad.page.evaluate(() => { Object.defineProperty(navigator, 'userAgent', { get: () => 'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)' }); });
+            await seedFakeData(ipad.page);
+            for (let i = 0; i < 100 && !stub.callsFor('load_from_drive').some(c => c.body.requestingDevice === 'iPad'); i++) await ipad.page.waitForTimeout(100);
+            await ipad.page.waitForTimeout(300);
+            for (const p of [pc.page, ipad.page]) await p.evaluate(id => db.activities.update(id, { endDate: '2026-01-02' }), ids.activityId);
+            // The PC has visited its dashboard more often, so its alert ids are higher (as on her devices)
+            for (let i = 0; i < 3; i++) await pc.page.evaluate(() => alertsEngine.refresh());
+            await ipad.page.evaluate(() => alertsEngine.refresh());
+            const pcAlerts = await pc.page.evaluate(() => db.alerts.toArray().then(r => r.map(a => a.id)));
+            const ipadOwn = await ipad.page.evaluate(() => db.alerts.toArray().then(r => r.map(a => a.id)));
+            await pc.page.evaluate(async () => { driveSync._dirty = true; return driveSync.push(); });
+            const pulled = await ipad.page.evaluate(() => driveSyncPull.checkOnLoad());
+            const ipadAfter = await ipad.page.evaluate(() => db.alerts.toArray().then(r => r.map(a => a.id)));
+            const actName = await ipad.page.evaluate(id => db.activities.get(id).then(a => a.endDate), ids.activityId);
+            assert(pcAlerts.length === 4 && ipadOwn.length === 4 && Math.min(...pcAlerts) > Math.max(...ipadOwn), 'set-up: ' + JSON.stringify({ pcAlerts, ipadOwn }));
+            assert(actName === '2026-01-02', 'the pull did not run: ' + JSON.stringify(pulled));
+            assert(ipadAfter.length === 4 && JSON.stringify(ipadAfter) === JSON.stringify(ipadOwn), "the iPad's alerts after the pull: " + JSON.stringify({ own: ipadOwn, after: ipadAfter }));
+            assert(real(pc.errors).length === 0 && real(ipad.errors).length === 0, 'page errors: ' + real(pc.errors).concat(real(ipad.errors)).join(' | '));
+            await pc.context.close(); await ipad.context.close();
         }
     }
 ];
