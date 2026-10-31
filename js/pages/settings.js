@@ -683,6 +683,7 @@ pages.settings = {
 
     showAddClassModal: async function() {
         state.editingClassId = null;
+        modals._openCreate('class');   // s360 (i115): Save decides by the form's own record, as Full Edit does
         document.getElementById('class-modal-title').textContent = 'Add Class';
         document.getElementById('class-name').value = '';
         document.getElementById('class-color').value = '#3b82f6';
@@ -693,12 +694,14 @@ pages.settings = {
 
     showEditClassModal: async function(id) {
         state.editingClassId = id;
+        const openToken = modals._beginEdit('class');   // s360
         document.getElementById('class-modal-title').textContent = 'Edit Class';
         document.getElementById('delete-class-btn').style.display = 'inline-flex';
         const cls = await db.classes.get(id);
         document.getElementById('class-name').value = cls.name;
         document.getElementById('class-color').value = cls.color;
         await this.renderClassPeriodCheckboxes(cls.periods || []);
+        modals._finishEdit('class', openToken, cls.id);   // s360: Save writes to this class only
         ui.showModal('modal-class');
     },
 
@@ -727,6 +730,7 @@ pages.settings = {
     hideClassModal: function() {
         ui.hideModal('modal-class');
         state.editingClassId = null;
+        modals._closeForm('class');
     },
 
     saveClass: async function() {
@@ -743,14 +747,18 @@ pages.settings = {
             .filter(cb => cb.checked)
             .map(cb => cb.value);
 
+        // s360: the class this form was opened for (or a new one), never a shared value read now
+        const formFor = await modals._formTarget('class', 'classes', 'class');
+        if (!formFor) return;
+
         const data = { name, color, periods, createdAt: new Date().toISOString() };
-            if (!state.editingClassId) {
+            if (formFor.mode !== 'edit') {
                 data.status = 'active';
             }
 
         try {
-            if (state.editingClassId) {
-                await db.classes.update(state.editingClassId, data);
+            if (formFor.mode === 'edit') {
+                await db.classes.update(formFor.id, data);
                 ui.showToast('Class updated', 'success');
             } else {
                 await db.classes.add(data);
@@ -882,7 +890,9 @@ pages.settings = {
             localStorage.setItem('automations-enabled', 'false');
             localStorage.removeItem('ferpa-webhook-acknowledged');
             this.setAutomationsUI(false);
-            ui.showToast('Email automations disabled. No student data will be transmitted.', 'info');
+            // 1-16 (s390): automatic Drive sync stops too (driveSync.autoSyncAllowed); Sync Now still works
+            if (typeof driveSync !== 'undefined') driveSync.updateSyncStatusUI();
+            ui.showToast('Email automations disabled, and automatic Drive sync with them. No student data will be transmitted unless you press a button such as Sync Now.', 'info');
         }
     },
 
@@ -892,6 +902,7 @@ pages.settings = {
         localStorage.setItem('ferpa-webhook-acknowledged', 'true');
         ui.hideModal('modal-ferpa-agreement');
         this.setAutomationsUI(true);
+        if (typeof driveSync !== 'undefined') driveSync.updateSyncStatusUI();   // 1-16: automatic sync resumes
         ui.showToast('Email automations enabled.', 'success');
     },
 
@@ -1980,6 +1991,7 @@ pages.settings = {
         try {
             const nonInstructionalDays = await db.settings.get('non-instructional-days');
             const allDays = nonInstructionalDays?.value || [];
+            this._niShown = allDays.map(d => ({ ...d }));   // s370: the days this list shows, by position
             const activeYear = await getActiveSchoolYear();
             // Filter to active year but keep original indices for editing
             const days = allDays
@@ -2046,7 +2058,27 @@ pages.settings = {
         }
     },
 
+    // s370 (i115): a day has no id, so the editor knows its day by the day's own stored contents.
+    // Edit opens the day the list showed; Save and Delete write the day that still matches it, wherever
+    // it is in the list now (a Drive pull can change the list), and nothing if none matches.
+    _niFormFor: null,
+    _niOpenToken: 0,
+    _niShown: null,
+    _niKey: function(d) {
+        return JSON.stringify(Object.keys(d || {}).sort().map(k => [k, d[k]]));
+    },
+    _niFind: function(days, snap, prefer) {
+        const key = this._niKey(snap);
+        if (days[prefer] && this._niKey(days[prefer]) === key) return prefer;
+        return days.findIndex(d => this._niKey(d) === key);
+    },
+    _niBlocked: function(why) {
+        ui.showToast('Save blocked — nothing was saved. ' + why + ' Close this form and open the day again.', 'error', 10000);
+    },
+
     showAddNonInstructionalDay: function() {
+        this._niOpenToken++;
+        this._niFormFor = { mode: 'create' };
         state.editingNonInstructionalIndex = null;
         document.getElementById('non-instructional-modal-title').textContent = 'Add Non-Instructional Day';
         document.getElementById('non-instructional-form').reset();
@@ -2055,18 +2087,32 @@ pages.settings = {
     },
 
     editNonInstructionalDay: async function(index) {
+        const token = ++this._niOpenToken;
+        this._niFormFor = null;   // s370: Save is blocked until this open finishes
         state.editingNonInstructionalIndex = index;
         document.getElementById('non-instructional-modal-title').textContent = 'Edit Non-Instructional Day';
         document.getElementById('delete-non-instructional-btn').style.display = 'inline-flex';
         
         try {
             const nonInstructionalDays = await db.settings.get('non-instructional-days');
-            const day = nonInstructionalDays.value[index];
+            const days = nonInstructionalDays?.value || [];
+            // s370: the day the list showed at this position, wherever it is now
+            const shown = this._niShown && this._niShown[index];
+            const at = shown ? this._niFind(days, shown, index) : index;
+            const day = days[at];
+            if (token !== this._niOpenToken) return;
+            if (!day) {
+                ui.showToast('That day was changed or removed (a sync may have updated the list). The list is refreshed; open it again.', 'error', 8000);
+                this.renderNonInstructionalDays();
+                return;
+            }
+            state.editingNonInstructionalIndex = at;
             
             document.getElementById('non-instructional-name').value = day.name;
             document.getElementById('non-instructional-type').value = day.type;
             document.getElementById('non-instructional-start').value = day.start;
             document.getElementById('non-instructional-end').value = day.end || '';
+            this._niFormFor = { mode: 'edit', day: { ...day }, index: at };
             
             ui.showModal('modal-non-instructional-day');
         } catch (error) {
@@ -2079,6 +2125,7 @@ pages.settings = {
         ui.hideModal('modal-non-instructional-day');
         document.getElementById('non-instructional-form').reset();
         state.editingNonInstructionalIndex = null;
+        this._niFormFor = null;
     },
 
     saveNonInstructionalDay: async function() {
@@ -2098,10 +2145,14 @@ pages.settings = {
             
             const activeYear = await getActiveSchoolYear();
             const dayData = { name, type, start, end: end || null, schoolYear: activeYear };
+            const formFor = this._niFormFor;   // s370
+            if (!formFor) { this._niBlocked('This form did not finish loading.'); return; }
             
-            if (state.editingNonInstructionalIndex !== null) {
-                // Update existing
-                days[state.editingNonInstructionalIndex] = dayData;
+            if (formFor.mode === 'edit') {
+                // Update existing: the day this form opened, wherever it is now
+                const at = this._niFind(days, formFor.day, formFor.index);
+                if (at < 0) { this._niBlocked('This day was changed or removed since you opened it (a sync may have updated the list).'); return; }
+                days[at] = dayData;
             } else {
                 // Add new
                 days.push(dayData);
@@ -2112,7 +2163,7 @@ pages.settings = {
                 value: days
             });
             
-            ui.showToast(state.editingNonInstructionalIndex !== null ? 'Day updated' : 'Day added', 'success');
+            ui.showToast(formFor.mode === 'edit' ? 'Day updated' : 'Day added', 'success');
             driveSync.markDirty();
             this.hideNonInstructionalDayModal();
             this.renderNonInstructionalDays();
@@ -2128,9 +2179,13 @@ pages.settings = {
         
         try {
             const nonInstructionalDays = await db.settings.get('non-instructional-days');
-            const days = nonInstructionalDays.value;
+            const days = nonInstructionalDays?.value || [];
+            // s370: delete the day this form opened, wherever it is now; nothing if it's gone or changed
+            const formFor = this._niFormFor;
+            const at = formFor && formFor.mode === 'edit' ? this._niFind(days, formFor.day, formFor.index) : -1;
+            if (at < 0) { ui.showToast('Delete blocked — nothing was deleted. This day was changed or removed since you opened it. Close this form and open the day again.', 'error', 10000); return; }
             
-            days.splice(state.editingNonInstructionalIndex, 1);
+            days.splice(at, 1);
             
             await db.settings.put({
                 key: 'non-instructional-days',

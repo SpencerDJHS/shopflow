@@ -2131,7 +2131,7 @@ const tests = [
         name: 'sync: an edit made during a slow upload is uploaded on the next cycle (1-14, push race)',
         fn: async ({ browser, base }) => {
             const stub = new WebhookStub();
-            const ls = { webhook_wildcat: 'https://script.google.com/macros/s/TEST/exec', webhook_token: 'test-token', 'drive-sync-enabled': 'true', 'drive-sync-password': 'test-sync-pass' };
+            const ls = { webhook_wildcat: 'https://script.google.com/macros/s/TEST/exec', webhook_token: 'test-token', 'automations-enabled': 'true', 'drive-sync-enabled': 'true', 'drive-sync-password': 'test-sync-pass' };
             const a = await openApp(browser, base, { stub, localStorageInit: ls });
             await seedFakeData(a.page);
             stub.delay('save_to_drive', 1500);
@@ -2161,7 +2161,7 @@ const tests = [
         name: 'sync: a pull still applies when the two devices\' clocks disagree (1-14, pull clock)',
         fn: async ({ browser, base }) => {
             const stub = new WebhookStub();
-            const ls = { webhook_wildcat: 'https://script.google.com/macros/s/TEST/exec', webhook_token: 'test-token', 'drive-sync-enabled': 'true', 'drive-sync-password': 'test-sync-pass' };
+            const ls = { webhook_wildcat: 'https://script.google.com/macros/s/TEST/exec', webhook_token: 'test-token', 'automations-enabled': 'true', 'drive-sync-enabled': 'true', 'drive-sync-password': 'test-sync-pass' };
             const a = await openApp(browser, base, { stub, localStorageInit: ls });
             await seedFakeData(a.page);
             await a.page.evaluate(async () => { driveSync._dirty = true; await driveSync.push(); });
@@ -2638,7 +2638,7 @@ const tests = [
         name: 'restore: a restored snapshot survives the next sync on both devices; a restored deleted item survives too; old snapshots are upgraded (3-18)',
         fn: async ({ browser, base }) => {
             const stub = new WebhookStub();
-            const ls = { webhook_wildcat: 'https://script.google.com/macros/s/TEST/exec', webhook_token: 'test-token', 'drive-sync-enabled': 'true', 'drive-sync-password': 'test-sync-pass' };
+            const ls = { webhook_wildcat: 'https://script.google.com/macros/s/TEST/exec', webhook_token: 'test-token', 'automations-enabled': 'true', 'drive-sync-enabled': 'true', 'drive-sync-password': 'test-sync-pass' };
             const pc = await openApp(browser, base, { stub, localStorageInit: ls });
             const ids = await seedFakeData(pc.page);
             const ipad = await openApp(browser, base, { stub, localStorageInit: ls });
@@ -3984,7 +3984,7 @@ const tests = [
         name: 'sync reliability: settings, class and note edits written without updatedAt reach the other device; differing settings = 0; pulls keep timestamps (3-17)',
         fn: async ({ browser, base }) => {
             const stub = new WebhookStub();
-            const ls = { webhook_wildcat: 'https://script.google.com/macros/s/TEST/exec', webhook_token: 'test-token', 'drive-sync-enabled': 'true', 'drive-sync-password': 'test-sync-pass' };
+            const ls = { webhook_wildcat: 'https://script.google.com/macros/s/TEST/exec', webhook_token: 'test-token', 'automations-enabled': 'true', 'drive-sync-enabled': 'true', 'drive-sync-password': 'test-sync-pass' };
             const pc = await openApp(browser, base, { stub, localStorageInit: ls });
             const ids = await seedFakeData(pc.page);
             const ipad = await openApp(browser, base, { stub, localStorageInit: ls });
@@ -5623,7 +5623,7 @@ const tests = [
             assert(p.mergeCalls === 0 && p.setupProblem === null, 'identity.merge ran in id mode, or Sync Setup Only was switched off: ' + JSON.stringify(p));
             // An upload sends no syncFormat before the cutover
             await page.evaluate(async () => {
-                localStorage.setItem('drive-sync-enabled', 'true'); localStorage.setItem('drive-sync-password', 'test-sync-pass');
+                localStorage.setItem('automations-enabled', 'true'); localStorage.setItem('drive-sync-enabled', 'true'); localStorage.setItem('drive-sync-password', 'test-sync-pass');
                 localStorage.setItem('webhook_wildcat', 'https://script.google.com/macros/s/TEST/exec'); localStorage.setItem('webhook_token', 'test-token');
                 driveSync._dirty = true; await driveSync.push();
             });
@@ -5987,7 +5987,7 @@ const tests = [
             assert(/from before the skills migration and this device is from after the identity cutover\. It can't be restored/.test(g.restoreToast || '') && g.backupsAfter === 0 && g.stillEpoch === epoch, 'restore: ' + JSON.stringify(g));
             // An upload sends syncFormat 2; a refusal (code sync-format-older) shows on the card; the undo only before the cutover
             await A.page.evaluate(async () => {
-                localStorage.setItem('drive-sync-enabled', 'true'); localStorage.setItem('drive-sync-password', 'test-sync-pass');
+                localStorage.setItem('automations-enabled', 'true'); localStorage.setItem('drive-sync-enabled', 'true'); localStorage.setItem('drive-sync-password', 'test-sync-pass');
                 localStorage.setItem('webhook_wildcat', 'https://script.google.com/macros/s/TEST/exec'); localStorage.setItem('webhook_token', 'test-token');
                 driveSync._dirty = true; await driveSync.push();
             });
@@ -6259,6 +6259,798 @@ const tests = [
             assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
             await context.close();
         }
+    },
+    {
+        name: 'dashboard: an overridden day is not auto-cancelled: her manual schedule wins over a calendar delay for Wildcat sign-ups (s380)',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            const { studentIds } = await seedFakeData(page);
+            // Today is a 2-hour delay on the calendar; one fake student is signed up for Wildcat today.
+            // runCase sets (or clears) her manual override, runs the dashboard's Wildcat pass, and
+            // returns the sign-up's status and whether its Wildcat attendance row exists.
+            const runCase = override => page.evaluate(async ({ sid, override }) => {
+                const today = getTodayString();
+                const y = new Date(); y.setDate(y.getDate() - 1);
+                await db.settings.put({ key: 'non-instructional-days', value: [{ start: today, type: 'delay-2hr', label: 'Fake delay' }] });
+                await db.wildcatSchedule.clear();
+                await db.attendance.clear();
+                const id = await db.wildcatSchedule.add({ studentId: sid, targetDate: today, status: 'pending', createdAt: new Date().toISOString() });
+                if (override === null) localStorage.removeItem('schedule-override');
+                else localStorage.setItem('schedule-override', JSON.stringify({ date: override.yesterday ? formatDateString(y) : today, schedule: override.schedule }));
+                await pages.dashboard.processWildcatSchedule();
+                const row = await db.wildcatSchedule.get(id);
+                const att = await db.attendance.where('[studentId+date+period]').equals([String(sid), today, 'wildcat']).first();
+                return { detected: await pages.dashboard.autoDetectSchedule(), status: row.status, att: att ? att.status : null };
+            }, { sid: studentIds[0], override });
+
+            // Control: no override, so the calendar's delay cancels the sign-up (proves the setup)
+            const none = await runCase(null);
+            assert(none.detected === '2-hour-delay', 'the fake calendar delay was not detected: ' + none.detected);
+            assert(none.status === 'cancelled', 'with no override the delay day did not cancel the sign-up: ' + none.status);
+
+            // She set today's schedule to Normal by hand: the sign-up is kept and its attendance row made
+            const normal = await runCase({ schedule: 'normal' });
+            assert(normal.status !== 'cancelled', 'her manual Normal schedule was undone: the Wildcat sign-up was auto-cancelled (' + normal.status + ')');
+            assert(normal.status === 'attendance-created' && normal.att === 'unmarked', 'the overridden day did not run as a normal Wildcat day: ' + JSON.stringify(normal));
+
+            // An override she left from yesterday does not count; neither does one to another no-Wildcat schedule
+            const old = await runCase({ schedule: 'normal', yesterday: true });
+            assert(old.status === 'cancelled', 'an override from yesterday stopped today\'s cancel: ' + old.status);
+            const early = await runCase({ schedule: 'early-dismissal' });
+            assert(early.status === 'cancelled', 'a manual early dismissal on a delay day kept the sign-up: ' + early.status);
+
+            assert(errors.length === 0, 'page errors: ' + errors.join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'dashboard: timers stop stacking: 10 dashboard renders leave 1 period timer (s380)',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            // Count live intervals from the first script on: wrap setInterval/clearInterval before the app loads
+            await context.addInitScript(() => {
+                const live = new Map();
+                const set = window.setInterval.bind(window), clear = window.clearInterval.bind(window);
+                window.setInterval = (fn, ms, ...a) => { const id = set(fn, ms, ...a); live.set(id, String(fn)); return id; };
+                window.clearInterval = id => { live.delete(id); return clear(id); };
+                window.__s380Live = () => [...live.values()];
+            });
+            await page.reload(); await waitForStartup(page);
+            await seedFakeData(page);
+            const count = () => page.evaluate(() => {
+                const all = window.__s380Live();
+                return { total: all.length, period: all.filter(src => /updateCurrentPeriod/.test(src)).length };
+            });
+            await page.evaluate(async () => { router.navigate('dashboard'); await pages.dashboard.render(); });
+            await page.waitForTimeout(300);
+            const once = await count();
+            await page.evaluate(async () => { for (let i = 0; i < 10; i++) await pages.dashboard.render(); });
+            await page.waitForTimeout(500);
+            const ten = await count();
+            assert(once.period === 1, 'expected 1 period timer after one render, found ' + once.period);
+            assert(ten.period === 1, '10 dashboard renders left ' + ten.period + ' period timers running (expected 1)');
+            assert(ten.total === once.total, 'live timers grew with renders: ' + once.total + ' after one render, ' + ten.total + ' after 10 more');
+            assert(errors.length === 0, 'page errors: ' + errors.join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'progressbook grade-gap finder: per-class counts, then one line per gap, using the export\'s own rows and the engine\'s "not rated" skills (q10)',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            const ids = await q10Seed(page);
+            const r = await page.evaluate(async ({ classId }) => {
+                await progressbookExport.open(classId);
+                const box = document.getElementById('progressbook-gaps');
+                const lines = kind => [...document.querySelectorAll(`#progressbook-gaps .progressbook-gap-line[data-kind="${kind}"]`)]
+                    .map(li => li.firstChild.textContent.trim() + ' | ' + li.querySelector('button').textContent.trim());
+                const L = progressbookExport._last;
+                return {
+                    open: !document.getElementById('modal-progressbook-export').classList.contains('hidden'),
+                    summary: document.getElementById('progressbook-gaps-summary')?.textContent || '',
+                    number: lines('number'), unrated: lines('unrated'), checkpoint: lines('checkpoint'), ungraded: lines('ungraded'),
+                    bold: box ? box.querySelectorAll('b').length : -1,
+                    // the export's own numbers, for the "never disagrees" checks
+                    notRated: L.rows.reduce((n, row) => n + progressbookExport.workingsFor(row.studentId).filter(x => !x.assessed).length, 0),
+                    noNumberRows: L.rows.filter(row => !row.number).length,
+                    csvNoNumber: L.rows.filter(row => !row.number).every(row => !progressbookExport.buildCsv(L.rows, 'technical').includes(row.last)),
+                    maya: displayName(await db.students.get(L.rows.find(row => !row.number).studentId * 1))
+                };
+            }, ids);
+            assert(r.open, 'the preview did not open');
+            assert(/^Test Engineering 1:/.test(r.summary), 'the summary does not start with the class: ' + r.summary);
+            const want = '1 with no Progressbook number · 23 open skill rating(s) missing · 2 completed checkpoint(s) not rated · 1 submitted, not graded';
+            assert(r.summary.endsWith(want), 'summary counts: ' + JSON.stringify(r.summary));
+            assert(r.notRated === 23 && r.noNumberRows === 1 && r.csvNoNumber, 'the finder disagrees with the export: ' + JSON.stringify(r));
+            assert(JSON.stringify(r.number) === JSON.stringify([`${r.maya}: no Progressbook number, so left out of both files. | Open student`]), 'number lines: ' + JSON.stringify(r.number));
+            const nr = n => `${n} student(s) not rated, each counts as 50.`;
+            const wantUnrated = [
+                `Fake Override Skill (Engineering): ${nr(4)} | Open Skills page`,
+                `Fake Tech 1 (Engineering): ${nr(2)} | Open assignment`,
+                `Fake Tech 2 <b>x</b> (Engineering): ${nr(3)} | Open assignment`,
+                `Fake Prof 1 (Professional): ${nr(2)} | Open assignment`,
+                `Fake Prof 2 (Professional): ${nr(4)} | Open assignment`,
+                `Fake Prof 3 (Professional): ${nr(4)} | Open assignment`,
+                `Fake Prof 4 (Professional): ${nr(4)} | Open assignment`
+            ];
+            assert(JSON.stringify(r.unrated) === JSON.stringify(wantUnrated), 'unrated lines: ' + JSON.stringify(r.unrated));
+            const wantCp = [
+                'Test Activity 1, checkpoint 1 (Test CP 1), Test Team A: 1 student(s) marked complete with no skill rating. | Open checkpoint',
+                'Test Activity 1, checkpoint 1 (Test CP 1), no group: 1 student(s) marked complete with no skill rating. | Open checkpoint'
+            ];
+            assert(JSON.stringify(r.checkpoint) === JSON.stringify(wantCp), 'checkpoint lines: ' + JSON.stringify(r.checkpoint));
+            assert(JSON.stringify(r.ungraded) === JSON.stringify(['Test Activity 1: 1 submitted, not graded yet. | Open assignment']), 'ungraded lines: ' + JSON.stringify(r.ungraded));
+            assert(r.bold === 0, 'a skill name was not escaped');
+            // Nothing missing: one plain line
+            const clean = await page.evaluate(async ({ classId }) => {
+                const g = progressbookExport.gapsFor(classId, { students: [], today: '2026-01-01', config: masteryEngine.mergeConfig(null) }, [],
+                    { activities: [], checkpoints: [], completions: [], observations: [], submissions: [], teams: [], teamMembers: [], skills: [], activitySkills: [] });
+                return progressbookExport.gapsHtml({ className: 'Fake Class', gaps: g });
+            }, ids);
+            assert(/0 with no Progressbook number · 0 open skill rating\(s\) missing · 0 completed checkpoint\(s\) not rated · 0 submitted, not graded/.test(clean) && /Nothing missing/.test(clean), 'no-gaps text: ' + clean);
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'progressbook grade-gap finder: each line opens the screen where it is fixed (student, assignment, checkpoint grid at that group, Skills page) (q10)',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            const ids = await q10Seed(page);
+            // Opens the preview, taps the first line of `kind` whose text includes `has`
+            const tap = (kind, has) => page.evaluate(async ({ classId, kind, has }) => {
+                await progressbookExport.open(classId);
+                const li = [...document.querySelectorAll(`.progressbook-gap-line[data-kind="${kind}"]`)].find(x => x.textContent.includes(has));
+                if (!li) return false;
+                li.querySelector('button').click();
+                return true;
+            }, { classId: ids.classId, kind, has });
+            const shown = id => page.evaluate(id => { const el = document.getElementById(id); return !!el && !el.classList.contains('hidden'); }, id);
+
+            assert(await tap('number', 'no Progressbook number'), 'no number line');
+            await page.waitForFunction(() => !document.getElementById('modal-student').classList.contains('hidden'), null, { timeout: 5000 });
+            const st = await page.evaluate(() => ({ editing: state.editingStudentId, box: !!document.getElementById('student-progressbook-id'), title: document.getElementById('student-modal-title').textContent }));
+            assert(st.editing === ids.maya && st.box && st.title === 'Edit Student', 'the student line opened: ' + JSON.stringify(st));
+            assert(!(await shown('modal-progressbook-export')), 'the preview stayed open');
+            await page.evaluate(() => ui.hideModal('modal-student'));
+
+            assert(await tap('unrated', 'Fake Tech 2'), 'unrated line');
+            await page.waitForFunction(id => !document.getElementById('page-activity-detail').classList.contains('hidden') && state.selectedActivity === id, ids.activityId, { timeout: 5000 });
+
+            assert(await tap('unrated', 'Fake Override Skill'), 'override-only line');
+            await page.waitForFunction(() => !document.getElementById('page-skills').classList.contains('hidden'), null, { timeout: 5000 });
+
+            assert(await tap('ungraded', 'submitted'), 'ungraded line');
+            await page.waitForFunction(id => !document.getElementById('page-activity-detail').classList.contains('hidden') && state.selectedActivity === id, ids.activityId, { timeout: 5000 });
+
+            assert(await tap('checkpoint', 'Test Team A'), 'checkpoint line');
+            await page.waitForFunction(() => { const c = pages.checkpoint; return c.selectedCheckpoint && c._renderedCheckpointId !== undefined && !document.getElementById('checkpoint-step-students').classList.contains('hidden'); }, null, { timeout: 8000 });
+            await page.waitForTimeout(300);   // an auto-pick of the current period would land after this
+            const cp = await page.evaluate(() => {
+                const c = pages.checkpoint;
+                return { page: !document.getElementById('page-checkpoint').classList.contains('hidden'), cls: c.selectedClass && c.selectedClass.id, act: c.selectedActivity && c.selectedActivity.id,
+                    team: c.selectedTeam && c.selectedTeam.id, cp: c.selectedCheckpoint && c.selectedCheckpoint.id, rows: document.querySelectorAll('#checkpoint-students-list .checkpoint__student-wrapper').length };
+            });
+            assert(cp.page && cp.cls === ids.classId && cp.act === ids.activityId && cp.team === ids.teamId && cp.cp === ids.cp1 && cp.rows === 2, 'the checkpoint line opened: ' + JSON.stringify(cp));
+
+            assert(await tap('checkpoint', 'no group'), 'no-group checkpoint line');
+            await page.waitForFunction(id => { const c = pages.checkpoint; return c.selectedActivity && c.selectedActivity.id === id && !document.getElementById('checkpoint-step-team').classList.contains('hidden'); }, ids.activityId, { timeout: 8000 });
+            const ng = await page.evaluate(() => ({ team: pages.checkpoint.selectedTeam, students: !document.getElementById('checkpoint-step-students').classList.contains('hidden') }));
+            assert(ng.team === null && !ng.students, 'the no-group line should stop at the group step: ' + JSON.stringify(ng));
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'progressbook grade-gap finder writes nothing (every table\'s rows and SHA-256 unchanged) and the two CSVs are byte-identical to release10/base (q10)',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            const ids = await q10Seed(page);
+            const tables = () => page.evaluate(async () => {
+                const hex = async text => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))].map(b => b.toString(16).padStart(2, '0')).join('');
+                const out = {};
+                for (const t of db.tables) { const rows = await t.toArray(); out[t.name] = rows.length + ':' + await hex(JSON.stringify(rows)); }
+                return out;
+            });
+            const before = await tables();
+            const r = await page.evaluate(async ({ classId }) => {
+                const hex = async text => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))].map(b => b.toString(16).padStart(2, '0')).join('');
+                await progressbookExport.open(classId);
+                const L = progressbookExport._last;
+                const built = { technical: progressbookExport.buildCsv(L.rows, 'technical'), professional: progressbookExport.buildCsv(L.rows, 'professional') };
+                return { built, sha: { technical: await hex(built.technical), professional: await hex(built.professional) }, gaps: !!document.getElementById('progressbook-gaps-summary') };
+            }, ids);
+            const after = await tables();
+            const changed = Object.keys(before).filter(k => before[k] !== after[k]);
+            assert(Object.keys(before).length > 20 && changed.length === 0, 'opening the preview with gaps changed: ' + JSON.stringify(changed));
+            // Recorded by running this same fixture and code on release10/base (63cd64d)
+            const BASE = {
+                technical: 'Student Number,First Name,Last Name,Mark\n456,Noah,Fixture,50\n1002,Liam,O\'Brien,76.58\n1001,Ada,Tester,61.67\n',
+                professional: 'Student Number,First Name,Last Name,Mark\n456,Noah,Fixture,50\n1002,Liam,O\'Brien,58.75\n1001,Ada,Tester,62.5\n'
+            };
+            const BASE_SHA = { technical: 'f14804e32c1446783f891f5fd50adbfd7282157ef6c6c01a69ba984e0582c0d8', professional: '89227897ee113e015cae77dabac3f8eee00ffb9d9e5ca791371846a0756ce584' };
+            assert(r.built.technical === BASE.technical && r.built.professional === BASE.professional, 'CSV text differs from base: ' + JSON.stringify(r.built));
+            assert(r.sha.technical === BASE_SHA.technical && r.sha.professional === BASE_SHA.professional, 'CSV SHA-256 differs from base: ' + JSON.stringify(r.sha));
+            // The downloaded files are the same bytes (the download adds one activityLog line each, as before)
+            const files = await page.evaluate(() => {
+                const got = [];
+                window.downloadCSV = (content, filename) => got.push({ content, filename });
+                progressbookExport.download('technical');
+                progressbookExport.download('professional');
+                return got;
+            });
+            assert(files.length === 2 && files[0].content === BASE.technical && files[1].content === BASE.professional, 'downloaded CSVs differ from base: ' + JSON.stringify(files));
+            // The finder was shown with this fixture (the part that is new in q10)
+            assert(r.gaps, 'no grade-gap finder in the preview');
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    // ── s360 (i115, plan row 5-15): the other editors save to the record they were opened for ──
+    // Each: open A's editor, then the shared value is pointed at B (as another open or render would do it),
+    // a field is changed and saved: A changes, B doesn't. Then a new-record form, with the shared value
+    // pointing at A, still creates exactly one new record and leaves A alone.
+    {
+        name: 'students editor: Save writes to the student it was opened for, not the shared editing id; a new student still creates (s360)',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            const ids = await seedFakeData(page);
+            const r = await page.evaluate(async ({ a, b, classId }) => {
+                const toasts = []; const orig = ui.showToast.bind(ui);
+                ui.showToast = (m, ...rest) => { toasts.push(String(m)); return orig(m, ...rest); };
+                const bBefore = JSON.stringify(await db.students.get(b));
+                await modals.showEditStudent(a);
+                await new Promise(res => setTimeout(res, 300));
+                state.editingStudentId = b;   // another open or render changes the shared value
+                document.getElementById('student-email').value = 'changed.a@example.test';
+                document.querySelector('.student-period-checkbox[value="1"]').checked = true;
+                await modals.saveStudent();
+                const out = { aEmail: (await db.students.get(a)).email, bSame: JSON.stringify(await db.students.get(b)) === bBefore };
+                // A new student, with the shared value left pointing at A
+                const aBefore = JSON.stringify(await db.students.get(a));
+                const countBefore = await db.students.count();
+                await modals.showAddStudent();
+                state.editingStudentId = a;
+                document.getElementById('student-first-name').value = 'Fake';
+                document.getElementById('student-last-name').value = 'Newsixty';
+                document.getElementById('student-class-id').value = String(classId);
+                document.querySelector('.student-period-checkbox[value="1"]').checked = true;
+                await modals.saveStudent();
+                out.added = (await db.students.count()) - countBefore;
+                out.newOne = (await db.students.toArray()).filter(s => s.lastName === 'Newsixty').length;
+                out.aSame = JSON.stringify(await db.students.get(a)) === aBefore;
+                // A student removed while its editor is open is not re-created, and nothing is written
+                await modals.showEditStudent(b);
+                await new Promise(res => setTimeout(res, 300));
+                await db.students.delete(b);
+                const countGone = await db.students.count();
+                document.getElementById('student-email').value = 'ghost@example.test';
+                document.querySelector('.student-period-checkbox[value="1"]').checked = true;
+                await modals.saveStudent();
+                out.goneAdded = (await db.students.count()) - countGone;
+                out.ghost = (await db.students.toArray()).filter(s => s.email === 'ghost@example.test').length;
+                out.blockedToast = toasts.some(t => /Save blocked/.test(t));
+                ui.hideModal('modal-student');
+                return out;
+            }, { a: ids.studentIds[0], b: ids.studentIds[1], classId: ids.classId });
+            assert(r.aEmail === 'changed.a@example.test', 'the student the editor was opened for did not change: ' + JSON.stringify(r));
+            assert(r.bSame, 'the other student (the shared editing id) was overwritten: ' + JSON.stringify(r));
+            assert(r.added === 1 && r.newOne === 1, 'a new student did not create exactly one record: ' + JSON.stringify(r));
+            assert(r.aSame, 'saving a new student changed the student the shared id pointed at: ' + JSON.stringify(r));
+            assert(r.goneAdded === 0 && r.ghost === 0 && r.blockedToast, 'a removed student was re-created or written: ' + JSON.stringify(r));
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'teams editor: Save writes to the team it was opened for, not the shared editing id; a new team still creates (s360)',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            const ids = await seedFakeData(page);
+            const r = await page.evaluate(async ({ a, classId, sids }) => {
+                const now = new Date().toISOString();
+                const b = await db.teams.add({ name: 'Fake Team S360 B', classId, period: '1', createdAt: now });
+                await db.teamMembers.add({ teamId: b, studentId: sids[2] });
+                const snapB = async () => JSON.stringify({ t: await db.teams.get(b), m: (await db.teamMembers.where('teamId').equals(b).toArray()).map(x => x.studentId).sort() });
+                const bBefore = await snapB();
+                await modals.showEditTeam(a);
+                await new Promise(res => setTimeout(res, 400));
+                state.editingTeamId = b;   // another open or render changes the shared value
+                document.getElementById('team-name').value = 'Fake Team S360 A renamed';
+                await modals.saveTeam();
+                const out = { aName: (await db.teams.get(a)).name, bSame: (await snapB()) === bBefore };
+                const aBefore = JSON.stringify(await db.teams.get(a));
+                const countBefore = await db.teams.count();
+                await modals.showAddTeam();
+                await new Promise(res => setTimeout(res, 300));
+                state.editingTeamId = a;
+                document.getElementById('team-name').value = 'Fake Team S360 New';
+                document.getElementById('team-class-id').value = String(classId);
+                document.querySelector(`.team-member-checkbox[value="${sids[3]}"]`).checked = true;
+                await modals.saveTeam();
+                out.added = (await db.teams.count()) - countBefore;
+                out.newOne = (await db.teams.toArray()).filter(t => t.name === 'Fake Team S360 New').length;
+                out.aSame = JSON.stringify(await db.teams.get(a)) === aBefore;
+                return out;
+            }, { a: ids.teamId, classId: ids.classId, sids: ids.studentIds });
+            assert(r.aName === 'Fake Team S360 A renamed', 'the team the editor was opened for did not change: ' + JSON.stringify(r));
+            assert(r.bSame, 'the other team (the shared editing id) was overwritten: ' + JSON.stringify(r));
+            assert(r.added === 1 && r.newOne === 1, 'a new team did not create exactly one record: ' + JSON.stringify(r));
+            assert(r.aSame, 'saving a new team changed the team the shared id pointed at: ' + JSON.stringify(r));
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'inventory editor: Save writes to the item it was opened for, not the shared editing id; a new item still creates (s360)',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            await seedFakeData(page);
+            const r = await page.evaluate(async () => {
+                const now = new Date().toISOString();
+                const a = await db.inventory.add({ name: 'Fake Drill S360', category: 'tools', quantity: 4, threshold: 1, location: 'Shelf A', createdAt: now });
+                const b = await db.inventory.add({ name: 'Fake Saw S360', category: 'tools', quantity: 2, threshold: 1, location: 'Shelf B', createdAt: now });
+                const bBefore = JSON.stringify(await db.inventory.get(b));
+                await modals.showEditInventoryItem(a);
+                await new Promise(res => setTimeout(res, 200));
+                state.editingInventoryId = b;   // another open or render changes the shared value
+                document.getElementById('inventory-quantity').value = '9';
+                await modals.saveInventoryItem();
+                const out = { aQty: (await db.inventory.get(a)).quantity, bSame: JSON.stringify(await db.inventory.get(b)) === bBefore };
+                const aBefore = JSON.stringify(await db.inventory.get(a));
+                const countBefore = await db.inventory.count();
+                modals.showAddInventoryItem();
+                state.editingInventoryId = a;
+                document.getElementById('inventory-name').value = 'Fake Clamp S360';
+                document.getElementById('inventory-category').value = 'tools';
+                document.getElementById('inventory-quantity').value = '6';
+                document.getElementById('inventory-threshold').value = '2';
+                await modals.saveInventoryItem();
+                out.added = (await db.inventory.count()) - countBefore;
+                out.newOne = (await db.inventory.toArray()).filter(i => i.name === 'Fake Clamp S360').length;
+                out.aSame = JSON.stringify(await db.inventory.get(a)) === aBefore;
+                return out;
+            });
+            assert(r.aQty === 9, 'the item the editor was opened for did not change: ' + JSON.stringify(r));
+            assert(r.bSame, 'the other item (the shared editing id) was overwritten: ' + JSON.stringify(r));
+            assert(r.added === 1 && r.newOne === 1, 'a new item did not create exactly one record: ' + JSON.stringify(r));
+            assert(r.aSame, 'saving a new item changed the item the shared id pointed at: ' + JSON.stringify(r));
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'calendar event editor: Save writes to the event it was opened for, not the shared editing id; a new event still creates (s360)',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            await seedFakeData(page);
+            const r = await page.evaluate(async () => {
+                const now = new Date().toISOString();
+                const a = await db.events.add({ title: 'Fake Event S360 A', date: '2026-11-05', category: 'general', description: '', createdAt: now });
+                const b = await db.events.add({ title: 'Fake Event S360 B', date: '2026-11-06', category: 'general', description: '', createdAt: now });
+                const bBefore = JSON.stringify(await db.events.get(b));
+                await modals.showEditEvent(a);
+                await new Promise(res => setTimeout(res, 200));
+                state.editingEventId = b;   // another open or render changes the shared value
+                document.getElementById('event-title').value = 'Fake Event S360 A edited';
+                await modals.saveEvent();
+                const out = { aTitle: (await db.events.get(a)).title, bSame: JSON.stringify(await db.events.get(b)) === bBefore };
+                const aBefore = JSON.stringify(await db.events.get(a));
+                const countBefore = await db.events.count();
+                modals.showAddEvent('2026-11-12');
+                state.editingEventId = a;
+                document.getElementById('event-title').value = 'Fake Event S360 New';
+                await modals.saveEvent();
+                out.added = (await db.events.count()) - countBefore;
+                out.newOne = (await db.events.toArray()).filter(e => e.title === 'Fake Event S360 New').length;
+                out.aSame = JSON.stringify(await db.events.get(a)) === aBefore;
+                return out;
+            });
+            assert(r.aTitle === 'Fake Event S360 A edited', 'the event the editor was opened for did not change: ' + JSON.stringify(r));
+            assert(r.bSame, 'the other event (the shared editing id) was overwritten: ' + JSON.stringify(r));
+            assert(r.added === 1 && r.newOne === 1, 'a new event did not create exactly one record: ' + JSON.stringify(r));
+            assert(r.aSame, 'saving a new event changed the event the shared id pointed at: ' + JSON.stringify(r));
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'class editor: Save writes to the class it was opened for, not the shared editing id; a new class still creates (s360)',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            const ids = await seedFakeData(page);
+            const r = await page.evaluate(async a => {
+                const b = await db.classes.add({ name: 'Fake Class S360 B', color: '#aa3344', periods: ['2'], status: 'active', createdAt: new Date().toISOString() });
+                const bBefore = JSON.stringify(await db.classes.get(b));
+                await pages.settings.showEditClassModal(a);
+                state.editingClassId = b;   // another open or render changes the shared value
+                document.getElementById('class-name').value = 'Fake Class S360 A renamed';
+                await pages.settings.saveClass();
+                const out = { aName: (await db.classes.get(a)).name, bSame: JSON.stringify(await db.classes.get(b)) === bBefore };
+                const aBefore = JSON.stringify(await db.classes.get(a));
+                const countBefore = await db.classes.count();
+                await pages.settings.showAddClassModal();
+                state.editingClassId = a;
+                document.getElementById('class-name').value = 'Fake Class S360 New';
+                await pages.settings.saveClass();
+                out.added = (await db.classes.count()) - countBefore;
+                const made = (await db.classes.toArray()).filter(c => c.name === 'Fake Class S360 New');
+                out.newOne = made.length;
+                out.newStatus = made[0] && made[0].status;
+                out.aSame = JSON.stringify(await db.classes.get(a)) === aBefore;
+                return out;
+            }, ids.classId);
+            assert(r.aName === 'Fake Class S360 A renamed', 'the class the editor was opened for did not change: ' + JSON.stringify(r));
+            assert(r.bSame, 'the other class (the shared editing id) was overwritten: ' + JSON.stringify(r));
+            assert(r.added === 1 && r.newOne === 1 && r.newStatus === 'active', 'a new class did not create exactly one active record: ' + JSON.stringify(r));
+            assert(r.aSame, 'saving a new class changed the class the shared id pointed at: ' + JSON.stringify(r));
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'non-instructional days: Edit, Save and Delete find the day the list showed by its contents, not its list position, when a sync changes the list; a day changed underneath is not overwritten (s370)',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            const r = await page.evaluate(async () => {
+                const toasts = [];
+                const show = ui.showToast.bind(ui);
+                ui.showToast = (m, t, d) => { toasts.push(String(m)); return show(m, t, d); };
+                const year = await getActiveSchoolYear();
+                const mk = (name, start) => ({ name, type: 'holiday', start, end: null, schoolYear: year });
+                // A Drive pull writes the whole list with the other device's stamp (bulk, as applyPulledData does)
+                const pull = value => db.transaction('rw', db.settings, async () => {
+                    syncHooks.markBulk();
+                    await db.settings.put({ key: 'non-instructional-days', value, updatedAt: new Date().toISOString() });
+                });
+                const names = async () => (await db.settings.get('non-instructional-days')).value.map(d => d.name);
+                const wait = ms => new Promise(res => setTimeout(res, ms));
+                const editBtn = name => [...document.querySelectorAll('#non-instructional-days-list > div')]
+                    .find(d => d.firstElementChild.firstElementChild.textContent === name).querySelector('button');
+                const nameBox = () => document.getElementById('non-instructional-name');
+                await db.settings.put({ key: 'non-instructional-days', value: [mk('Fake Day A', '2026-11-02'), mk('Fake Day B', '2026-11-09'), mk('Fake Day C', '2026-11-16')] });
+                await pages.settings.renderNonInstructionalDays();
+                // 1. The list is on screen; a sync adds a day ahead of the others; Edit on B
+                const bBtn = editBtn('Fake Day B');
+                await pull([mk('Fake Day X', '2026-10-26'), ...(await db.settings.get('non-instructional-days')).value]);
+                bBtn.click();
+                await wait(300);
+                const opened = nameBox().value;
+                // 2. While B is open, another sync adds one more ahead; Save
+                await pull([mk('Fake Day Y', '2026-10-19'), ...(await db.settings.get('non-instructional-days')).value]);
+                nameBox().value = 'Fake Day B Edited';
+                await pages.settings.saveNonInstructionalDay();
+                const afterSave = await names();
+                // 3. Delete: open B, a sync adds a day ahead, Delete
+                await pages.settings.renderNonInstructionalDays();
+                const b2 = editBtn('Fake Day B Edited');
+                b2.click();
+                await wait(300);
+                await pull([mk('Fake Day Z', '2026-10-12'), ...(await db.settings.get('non-instructional-days')).value]);
+                await pages.settings.deleteNonInstructionalDay();
+                const afterDelete = await names();
+                // 4. C is open; the other device changes C; Save writes nothing
+                await pages.settings.renderNonInstructionalDays();
+                editBtn('Fake Day C').click();
+                await wait(300);
+                const cur = (await db.settings.get('non-instructional-days')).value;
+                await pull(cur.map(d => d.name === 'Fake Day C' ? { ...d, name: 'Fake Day C Changed On PC' } : d));
+                nameBox().value = 'Fake Day C Mine';
+                toasts.length = 0;
+                await pages.settings.saveNonInstructionalDay();
+                const afterBlocked = await names();
+                const modalOpen = !document.getElementById('modal-non-instructional-day').classList.contains('hidden');
+                pages.settings.hideNonInstructionalDayModal();
+                return { opened, afterSave, afterDelete, afterBlocked, blockedToasts: toasts.slice(), modalOpen };
+            });
+            assert(r.opened === 'Fake Day B', `Edit on Fake Day B opened "${r.opened}" (the day now at B's old list position)`);
+            assert(JSON.stringify(r.afterSave) === JSON.stringify(['Fake Day Y', 'Fake Day X', 'Fake Day A', 'Fake Day B Edited', 'Fake Day C']), 'Save wrote the wrong day: ' + JSON.stringify(r.afterSave));
+            assert(JSON.stringify(r.afterDelete) === JSON.stringify(['Fake Day Z', 'Fake Day Y', 'Fake Day X', 'Fake Day A', 'Fake Day C']), 'Delete removed the wrong day: ' + JSON.stringify(r.afterDelete));
+            assert(JSON.stringify(r.afterBlocked) === JSON.stringify(['Fake Day Z', 'Fake Day Y', 'Fake Day X', 'Fake Day A', 'Fake Day C Changed On PC']), 'a day changed underneath was overwritten: ' + JSON.stringify(r.afterBlocked));
+            assert(r.blockedToasts.some(t => /Save blocked — nothing was saved/.test(t)) && r.modalOpen, 'no "Save blocked" message, or the form closed: ' + JSON.stringify(r));
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'full edit: a Drive pull that applies while it is open is not overwritten without asking; No saves nothing and keeps the form, Yes saves; an unchanged record and her own Sync to Hub ask nothing (s370)',
+        fn: async ({ browser, base }) => {
+            const stub = new WebhookStub();
+            const ls = { webhook_wildcat: 'https://script.google.com/macros/s/TEST/exec', webhook_token: 'test-token' };
+            const { page, errors, context } = await openApp(browser, base, { stub, localStorageInit: ls });
+            const { activityId } = await seedFakeData(page);
+            const open = async () => {
+                await page.evaluate(id => modals.openFullEdit(id), activityId);
+                await page.waitForFunction(id => pages.activityEdit._formFor && pages.activityEdit._formFor.id === id, activityId, { timeout: 8000 });
+            };
+            // Save answers confirm() as told and records every question
+            const save = (answer, setDesc) => page.evaluate(async ({ id, answer, setDesc }) => {
+                const asked = [];
+                window.confirm = q => { asked.push(q); return answer; };
+                if (setDesc) document.getElementById('fe-description').value = setDesc;
+                await pages.activityEdit.save();
+                window.confirm = () => true;
+                const rec = await db.activities.get(id);
+                return { asked, desc: rec.description, unit: rec.unit, formFor: pages.activityEdit._formFor, onScreen: document.getElementById('fe-description').value };
+            }, { id: activityId, answer, setDesc });
+            // 1. Nothing changed underneath: no question
+            await open();
+            const r1 = await save(false, 'Fake description 1');
+            assert(r1.asked.length === 0 && r1.desc === 'Fake description 1', 'an unchanged record asked or did not save: ' + JSON.stringify(r1));
+            // 2. A pull applies while the form is open (bulk write, the other device's later stamp); No
+            await open();
+            await page.evaluate(async id => {
+                const cur = await db.activities.get(id);
+                const later = new Date(Date.parse(cur.updatedAt) + 1000).toISOString();
+                await db.transaction('rw', db.activities, async () => { syncHooks.markBulk(); await db.activities.update(id, { unit: 'Fake Unit From PC', updatedAt: later }); });
+            }, activityId);
+            const r2 = await save(false, 'Fake description 2');
+            assert(r2.asked.length === 1, `a pull applied while Full Edit was open and Save asked ${r2.asked.length} question(s) (expected 1); description now "${r2.desc}"`);
+            assert(/changed after you opened it/.test(r2.asked[0]), 'the question: ' + r2.asked[0]);
+            assert(r2.desc === 'Fake description 1' && r2.unit === 'Fake Unit From PC', 'No still wrote: ' + JSON.stringify(r2));
+            assert(r2.formFor && r2.formFor.id === activityId && r2.onScreen === 'Fake description 2', 'No closed the form or lost her changes: ' + JSON.stringify(r2));
+            // 3. Save again; Yes: her change is saved, the pulled field she didn't touch stays
+            const r3 = await save(true, null);
+            assert(r3.asked.length === 1 && r3.desc === 'Fake description 2' && r3.unit === 'Fake Unit From PC', 'Yes: ' + JSON.stringify(r3));
+            // 4. Her own Sync to Hub while the form is open doesn't count as a change from elsewhere
+            await open();
+            await page.evaluate(() => pages.activityEdit.syncToHub());
+            await page.waitForTimeout(300);
+            const synced = await page.evaluate(id => db.activities.get(id).then(a => a.lastHubSync), activityId);
+            const r4 = await save(false, 'Fake description 4');
+            assert(synced && stub.callsFor('sync_to_hub_sheet').length === 1, 'the Hub sync did not run: ' + JSON.stringify({ synced, calls: stub.calls.map(c => c.action) }));
+            assert(r4.asked.length === 0 && r4.desc === 'Fake description 4', 'after her own Sync to Hub, Save asked or did not save: ' + JSON.stringify(r4));
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'full edit: unticking and ticking skills writes skillsAssessed (descriptors kept, the unticked skill gone, the new one added); an unchanged save leaves it as stored (s370)',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            const { activityId } = await seedFakeData(page);
+            const ids = await page.evaluate(async aid => {
+                const now = new Date().toISOString();
+                const s1 = await db.skills.add({ name: 'Fake Skill One', category: 'Fabrication', createdAt: now });
+                const s2 = await db.skills.add({ name: 'Fake Skill Two', category: 'Design', createdAt: now });
+                const s3 = await db.skills.add({ name: 'Fake Skill Three', category: 'Design', createdAt: now });
+                await db.activitySkills.add({ activityId: aid, skillId: s1 });
+                await db.activitySkills.add({ activityId: aid, skillId: s2 });
+                const sa = [
+                    { skillName: 'Fake Skill One', skillId: s1, checkpoints: [1], levels: { Beginning: 'Fake B text', Proficient: 'Fake P text' } },
+                    { skillName: 'Fake Skill Two', skillId: s2, checkpoints: [], levels: { Developing: 'Fake D text' } }
+                ];
+                await db.activities.update(aid, { skillsAssessed: sa });
+                return { s1, s2, s3, sa };
+            }, activityId);
+            const open = async () => {
+                await page.evaluate(id => modals.openFullEdit(id), activityId);
+                await page.waitForFunction(id => pages.activityEdit._formFor && pages.activityEdit._formFor.id === id, activityId, { timeout: 8000 });
+            };
+            const stored = () => page.evaluate(async id => {
+                const a = await db.activities.get(id);
+                const engine = [...masteryEngine.activitySkillIds({ activitySkills: await db.activitySkills.toArray() }, a)].sort();
+                return { sa: a.skillsAssessed, engine };
+            }, activityId);
+            // An unchanged save (only the description) leaves skillsAssessed exactly as stored
+            await open();
+            await page.evaluate(async () => { document.getElementById('fe-description').value = 'Fake description'; await pages.activityEdit.save(); });
+            const r1 = await stored();
+            assert(JSON.stringify(r1.sa) === JSON.stringify(ids.sa), 'an unchanged save changed skillsAssessed: ' + JSON.stringify(r1.sa));
+            // Untick Two, tick Three
+            await open();
+            await page.evaluate(async ({ s2, s3 }) => {
+                document.querySelector(`.fe-skill-cb[value="${s2}"]`).checked = false;
+                document.querySelector(`.fe-skill-cb[value="${s3}"]`).checked = true;
+                await pages.activityEdit.save();
+            }, ids);
+            const r2 = await stored();
+            const want = [ids.sa[0], { skillName: 'Fake Skill Three', skillId: ids.s3, checkpoints: [], levels: {} }];
+            assert(!(r2.sa || []).some(e => e.skillId === ids.s2), 'the unticked Fake Skill Two is still in skillsAssessed: ' + JSON.stringify(r2.sa));
+            assert(JSON.stringify(r2.sa) === JSON.stringify(want), 'skillsAssessed after the save: ' + JSON.stringify(r2.sa) + '\nexpected ' + JSON.stringify(want));
+            assert(JSON.stringify(r2.engine) === JSON.stringify([String(ids.s1), String(ids.s3)].sort()), 'the mastery engine still counts the unticked skill: ' + JSON.stringify(r2.engine));
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'end class: a failed or skipped Hub sync (reply lost, an error part-way, a missing assignment) leaves the shared assignment id (state.editingActivityId) as it was (s370)',
+        fn: async ({ browser, base }) => {
+            const stub = new WebhookStub();
+            stub.raw('sync_to_hub_sheet', '<html>Fake network page</html>');
+            const ls = { webhook_wildcat: 'https://script.google.com/macros/s/TEST/exec', webhook_token: 'test-token' };
+            const { page, errors, context } = await openApp(browser, base, { stub, localStorageInit: ls });
+            const { activityId } = await seedFakeData(page);
+            const r = await page.evaluate(async aid => {
+                const toasts = [];
+                const show = ui.showToast.bind(ui);
+                ui.showToast = (m, t, d) => { toasts.push(String(m)); return show(m, t, d); };
+                const out = {};
+                const build = hubSync.buildPayload;
+                for (const [label, boxId] of [['lost', aid], ['threw', aid], ['missing', 987654]]) {
+                    state.editingActivityId = 4242;
+                    // 'threw': the sync fails part-way with an error (here, building the payload)
+                    hubSync.buildPayload = label === 'threw' ? async () => { throw new Error('Fake payload failure'); } : build;
+                    await modals.loadEndClassHubActivities('1');
+                    document.getElementById('end-class-hub-activities').innerHTML = `<input type="checkbox" class="hub-sync-checkbox" value="${boxId}" checked>`;
+                    document.getElementById('end-class-period').value = '1';
+                    await modals.completeEndClass();
+                    out[label] = state.editingActivityId;
+                }
+                hubSync.buildPayload = build;
+                return { out, toasts };
+            }, activityId);
+            assert(stub.callsFor('sync_to_hub_sheet').length >= 1, 'the Hub sync was never sent');   // webhookFetch retries a lost reply once
+            assert(r.toasts.filter(t => /1 activity failed to sync/.test(t)).length === 2, 'expected 2 failure messages: ' + JSON.stringify(r.toasts));
+            assert(r.out.lost === 4242, `after a Hub sync whose reply was lost the shared assignment id is ${r.out.lost} (was 4242)`);
+            assert(r.out.threw === 4242, `after a Hub sync that failed with an error the shared assignment id is ${r.out.threw} (was 4242)`);
+            assert(r.out.missing === 4242, `after a Hub sync of a missing assignment the shared assignment id is ${r.out.missing} (was 4242)`);
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    }
+    ,
+    {
+        name: 'lock: nothing from the database shows before the PIN screen; the PIN screen still shows, and the app after unlock (s390)',
+        fn: async ({ browser, base }) => {
+            const { context, page, errors } = await openApp(browser, base);
+            await seedFakeData(page);
+            // A fake flex-period name: start-up paints it into the app shell before the PIN lock starts
+            const FLEX = 'Zephyrhour Fake';
+            await page.evaluate(async flex => { await db.settings.put({ key: 'flex-period-name', value: flex }); }, FLEX);
+            const markers = [FLEX, 'Ada Tester', 'Maya Sample', 'Test Activity 1', 'Test Team A', 'ada@example.test'];
+            // Until #pin-lock-screen is displayed, records any visible #app box and any seeded text on screen
+            await context.addInitScript(markers => {
+                const rec = window.__prePin = { checks: 0, pinShown: false, pinText: '', violations: [] };
+                const note = v => { if (!rec.violations.includes(v)) rec.violations.push(v); };
+                const check = () => {
+                    if (rec.pinShown) return;
+                    const screen = document.getElementById('pin-lock-screen');
+                    if (screen && screen.style.display && screen.style.display !== 'none') {
+                        rec.pinShown = true;
+                        rec.pinText = screen.innerText || '';
+                        return;
+                    }
+                    if (!document.body) return;
+                    rec.checks++;
+                    const app = document.getElementById('app');
+                    if (app && app.getClientRects().length > 0) note('the app shell is visible');
+                    const text = document.body.innerText || '';
+                    for (const m of markers) if (text.includes(m)) note('seeded text on screen: ' + m);
+                };
+                new MutationObserver(check).observe(document, { subtree: true, childList: true, characterData: true, attributes: true });
+                document.addEventListener('DOMContentLoaded', check);
+            }, markers);
+            await page.reload({ waitUntil: 'load' });
+            await waitForStartup(page);
+            const r = await page.evaluate(() => ({ ...window.__prePin,
+                appAfter: document.getElementById('app').getClientRects().length > 0,
+                flexAfter: document.body.innerText.includes('Zephyrhour Fake') }));
+            assert(r.checks > 0, 'the observer never ran before the PIN screen');
+            assert(r.violations.length === 0, 'before the PIN screen showed: ' + r.violations.join('; '));
+            assert(r.pinShown && /PIN/.test(r.pinText), 'the PIN screen did not show its text: ' + JSON.stringify(r.pinText.slice(0, 80)));
+            assert(r.appAfter, 'the app did not show after unlock');
+            assert(r.flexAfter, 'the flex-period name did not show after unlock (the setup did not seed it)');
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'consent: the automations consent screen names every destination the code sends data to (s390)',
+        fn: async ({ browser, base }) => {
+            // Every webhook action in the code, read from the sources (not guessed)
+            const jsRoot = new URL('../js/', import.meta.url);
+            const files = [];
+            const walk = dir => {
+                for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+                    const p = path.join(dir, e.name);
+                    if (e.isDirectory()) walk(p); else if (p.endsWith('.js')) files.push(p);
+                }
+            };
+            walk(jsRoot.pathname);
+            const found = new Map();   // action -> files
+            const add = (name, file) => { if (!found.has(name)) found.set(name, new Set()); found.get(name).add(path.relative(jsRoot.pathname, file)); };
+            const callers = [];
+            for (const f of files) {
+                const src = fs.readFileSync(f, 'utf8');
+                let n = 0;
+                for (const m of src.matchAll(/\baction\s*:\s*'([A-Za-z0-9_]+)'/g)) { add(m[1], f); n++; }        // { action: 'x' }
+                for (const m of src.matchAll(/\b\w*[aA]ction\s*===?\s*'([A-Za-z0-9_]+)'/g)) { add(m[1], f); n++; } // emailAction === 'x'
+                if (/\b(webhookFetch|syncFetch)\(/.test(src) && !f.endsWith(path.join('core', 'webhook.js'))) callers.push({ f: path.relative(jsRoot.pathname, f), n });
+            }
+            // The action lists webhook.js keeps (retry-safe, sync, email)
+            const wh = fs.readFileSync(new URL('../js/core/webhook.js', import.meta.url), 'utf8');
+            for (const blk of wh.matchAll(/const WEBHOOK_(RETRY_SAFE|SYNC_ACTIONS|EMAIL_ACTIONS)\s*=([\s\S]*?);/g)) {
+                for (const m of blk[2].matchAll(/'([a-z][a-z0-9_]*)'/g)) add(m[1], 'core/webhook.js');
+                if (blk[1] === 'EMAIL_ACTIONS') for (const m of blk[2].matchAll(/^\s*([a-z][a-z0-9_]*)\s*:/gm)) add(m[1], 'core/webhook.js');
+            }
+            // Where each action's data goes. A new action fails here until it is mapped and on the consent screen.
+            const DEST = {
+                check_form_submissions: 'webhook',
+                save_to_drive: 'drive', load_from_drive: 'drive',
+                list_classroom_courses: 'classroom', list_classroom_coursework: 'classroom', list_classroom_topics: 'classroom',
+                list_classroom_students: 'classroom', create_classroom_topic: 'classroom', create_classroom_coursework: 'classroom',
+                update_classroom_coursework: 'classroom', create_classroom_rubric: 'classroom', push_to_classroom: 'classroom',
+                sync_to_hub_sheet: 'hub',
+                send_immediate: 'email', queue_absence: 'email', cancel_absence: 'email', update_absence_missed: 'email',
+                send_queued_now: 'email', send_absence_summary: 'email', send_roster_notifications: 'email', send_feedback: 'email'
+            };
+            const NOT_WEBHOOK = { joined: 'teamHistory rows', left: 'teamHistory rows' };
+            const unmapped = [...found.keys()].filter(a => !(a in DEST) && !(a in NOT_WEBHOOK));
+            assert(unmapped.length === 0, 'webhook action(s) not in the destination table: ' + unmapped.map(a => `${a} (${[...found.get(a)].join(', ')})`).join('; '));
+            const stale = Object.keys(DEST).filter(a => !found.has(a));
+            assert(stale.length === 0, 'the destination table names actions the code no longer has: ' + stale.join(', '));
+            const silent = callers.filter(c => c.n === 0).map(c => c.f);
+            assert(callers.length >= 8 && silent.length === 0, 'a webhook caller whose action the test cannot read: ' + JSON.stringify({ callers: callers.length, silent }));
+
+            const { context, page, errors } = await openApp(browser, base);
+            await page.evaluate(() => { router.navigate('settings'); pages.settings.handleAutomationsToggle(true); });
+            await page.waitForFunction(() => !document.getElementById('modal-ferpa-agreement').classList.contains('hidden'));
+            const shown = await page.evaluate(() => [...document.querySelectorAll('#modal-ferpa-agreement [data-destination]')]
+                .filter(li => li.getClientRects().length > 0).map(li => ({ key: li.dataset.destination, text: li.innerText })));
+            const NAMES = { webhook: /webhook/i, drive: /Drive sync file/, classroom: /Classroom/, hub: /Student Hub sheet/, email: /email/i };
+            const needed = new Set(['webhook', ...Object.values(DEST)]);
+            for (const d of needed) {
+                const li = shown.find(s => s.key === d);
+                assert(li, `the consent screen does not list "${d}" (shown: ${JSON.stringify(shown.map(s => s.key))})`);
+                assert(NAMES[d].test(li.text), `the consent line for "${d}" does not name it: ${li.text}`);
+            }
+            // Cancel leaves automations off, as before
+            await page.evaluate(() => pages.settings.declineFerpa());
+            assert(await page.evaluate(() => localStorage.getItem('automations-enabled') !== 'true'), 'Cancel turned automations on');
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'automations off: no automatic sync call reaches the webhook; Sync Now and Check for Updates still work (s390)',
+        fn: async ({ browser, base }) => {
+            const stub = new WebhookStub();
+            const ls = { webhook_wildcat: 'https://script.google.com/macros/s/TEST/exec', webhook_token: 'test-token', 'automations-enabled': 'true', 'drive-sync-enabled': 'true', 'drive-sync-password': 'test-sync-pass' };
+            const { context, page, errors } = await openApp(browser, base, { stub, localStorageInit: ls });
+            const count = () => ({ pull: stub.callsFor('load_from_drive').length, push: stub.callsFor('save_to_drive').length });
+            const waitFor = async (fn, ms = 5000) => { const end = Date.now() + ms; while (Date.now() < end && !fn()) await page.waitForTimeout(100); return fn(); };
+            // Control: with automations on, the on-load pull reaches the webhook
+            assert(await waitFor(() => count().pull >= 1), 'setup: the on-load pull did not reach the webhook with automations on');
+            // She turns automations off (the toggle's own handler); the openApp init script must not turn them back on at reload
+            await page.evaluate(() => { router.navigate('settings'); pages.settings.handleAutomationsToggle(false); });
+            await context.addInitScript(() => localStorage.setItem('automations-enabled', 'false'));
+            const before = count();
+            // An edit (upload delay shortened), the back-online upload, and a reload
+            await page.evaluate(async () => {
+                driveSync.DEBOUNCE_MS = 200;
+                await db.students.add({ firstName: 'Ola', lastName: 'Fakeperson', name: 'Ola Fakeperson', email: 'ola@example.test', status: 'active', createdAt: new Date().toISOString() });
+            });
+            await page.waitForTimeout(1500);
+            await page.evaluate(() => window.dispatchEvent(new Event('online')));
+            await page.waitForTimeout(800);
+            const afterEdit = count();
+            assert(afterEdit.push === before.push, `an automatic upload reached the webhook with automations off: ${afterEdit.push - before.push}`);
+            const status = await page.evaluate(() => { driveSync.updateSyncStatusUI(); const el = document.getElementById('drive-sync-auto-off'); return el ? { text: el.textContent, display: el.style.display } : null; });
+            assert(status && status.display !== 'none' && /Sync Now still works/.test(status.text), 'the sync card does not say automatic sync is off: ' + JSON.stringify(status));
+            await page.reload({ waitUntil: 'load' });
+            await waitForStartup(page);
+            await page.waitForTimeout(1500);
+            await page.evaluate(() => pages.dashboard.doPullRefresh());
+            const afterReload = count();
+            assert(afterReload.pull === before.pull && afterReload.push === before.push,
+                `an automatic sync call reached the webhook after a reload with automations off: ${JSON.stringify({ before, afterReload })}`);
+            // What she presses still works: Check for Updates downloads, Sync Now downloads then uploads
+            await page.evaluate(() => driveSyncPull.checkOnLoad({ manual: true }));
+            assert(count().pull === before.pull + 1, 'Check for Updates did not download with automations off');
+            await page.evaluate(() => driveSyncNow());
+            const afterNow = count();
+            assert(afterNow.pull === before.pull + 2 && afterNow.push === before.push + 1, 'Sync Now did not download and upload: ' + JSON.stringify({ before, afterNow }));
+            // Automations back on: automatic upload resumes (proves the shortened edit path really uploads)
+            await page.evaluate(async () => {
+                pages.settings.acceptFerpa();
+                driveSync.DEBOUNCE_MS = 200;
+                await db.students.add({ firstName: 'Pim', lastName: 'Fakeperson', name: 'Pim Fakeperson', email: 'pim@example.test', status: 'active', createdAt: new Date().toISOString() });
+            });
+            assert(await waitFor(() => count().push === afterNow.push + 1), 'with automations back on, the edit was not uploaded');
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
     }
 ];
 
@@ -6291,4 +7083,54 @@ async function i313Reimport(page, studentIds, done, next, first) {
         const after = await snap();
         return { shown, before, after, log: [log0, await db.activityLog.count()] };
     }, { studentIds, done, next, first });
+}
+
+// q10: a skills-graded fake class with one of each grade gap, and decoys that are not gaps.
+// Students (seedFakeData): Ada, Liam (Test Team A), Maya, Noah (no group). Maya has no number.
+async function q10Seed(page) {
+    const ids = await seedFakeData(page);
+    const more = await page.evaluate(async ({ classId, activityId, teamId, s, cp1 }) => {
+        const now = new Date().toISOString();
+        const yesterday = formatDateString(new Date(Date.now() - 86400000));
+        const earlier = formatDateString(new Date(Date.now() - 5 * 86400000));
+        const add = (name, category) => db.skills.add({ name, category, createdAt: now });
+        const T1 = await add('Fake Tech 1', 'Design'), T2 = await add('Fake Tech 2 <b>x</b>', 'Measurement');
+        const P = [];
+        for (let i = 1; i <= 4; i++) P.push(await add('Fake Prof ' + i, 'Professional'));
+        const X = await add('Fake Override Skill', 'Measurement');   // open only through the class override
+        await add('Fake Retired Skill', 'Design').then(id => db.skills.update(id, { retiredAt: now }));
+        await db.activities.update(activityId, { startDate: earlier, endDate: yesterday, skillsAssessed: [T1, T2, ...P].map(skillId => ({ skillId })) });
+        await db.checkpoints.update(cp1, { skillsAssessable: [T1], suggestedDate: yesterday });
+        const cp2 = await db.checkpoints.add({ activityId, number: 2, title: 'Fake CP no skills', createdAt: now });
+        await db.settings.put({ key: 'mastery-opportunity-' + classId, value: { open: [X] } });
+        let t = 0;
+        const rate = (studentId, skillId, rating, checkpointId = null) => db.skillObservations.add({ studentId, skillId, activityId, checkpointId, rating, evidenceType: 'checkpoint_conversation', createdAt: new Date(Date.UTC(2026, 9, 1, 12, t++)).toISOString(), updatedAt: now });
+        await rate(s[0], T1, 'Proficient'); await rate(s[0], P[0], 'Advanced');
+        await rate(s[1], T1, 'Developing'); await rate(s[1], T2, 'Advanced'); await rate(s[1], P[0], 'Proficient');
+        await rate(s[1], T1, 'Proficient', cp1);   // Liam's checkpoint is rated
+        const removed = await rate(s[2], T1, 'Advanced', cp1);   // Maya's only checkpoint rating was removed
+        await db.skillObservations.update(removed, { deletedAt: now });
+        const done = (studentId, checkpointId, completed = true) => db.checkpointCompletions.add({ checkpointId, studentId, completed, completedAt: now, createdAt: now });
+        await done(s[0], cp1);          // Ada: complete, not rated (Test Team A) -> gap
+        await done(s[1], cp1);          // Liam: complete and rated -> no gap
+        await done(s[2], cp1, false);   // Maya: not complete -> no gap
+        await done(s[3], cp1);          // Noah: complete, not rated, no group -> gap
+        await done(s[0], cp2);          // a checkpoint with no skills to rate -> no gap
+        const sub = (studentId, actId, status, extra = {}) => db.submissions.add({ activityId: actId, studentId, status, submittedAt: now, createdAt: now, ...extra });
+        await sub(s[0], activityId, 'submitted');                     // gap
+        await sub(s[1], activityId, 'graded', { score: 10 });
+        await sub(s[2], activityId, 'submitted', { deletedAt: now });  // removed
+        await sub(s[3], activityId, 'in-progress');
+        const other = await db.classes.add({ name: 'Fake Other Class', color: '#999999', periods: [2], createdAt: now });
+        const otherAct = await db.activities.add({ name: 'Fake Other Activity', classId: other, startDate: earlier, endDate: yesterday, status: 'active', createdAt: now, updatedAt: now });
+        await sub(s[1], otherAct, 'submitted');                       // another class's assignment
+        await db.students.update(s[0], { progressbookId: '1001' });
+        await db.students.update(s[1], { progressbookId: '1002' });
+        await db.students.update(s[3], { progressbookId: '00456' });
+        await setClassMasteryMode(classId, 'weighted-average');
+        router.navigate('settings');
+        await pages.settings.renderClasses();
+        return { cp2, T1, T2, X };
+    }, { classId: ids.classId, activityId: ids.activityId, teamId: ids.teamId, s: ids.studentIds, cp1: ids.checkpointIds[0] });
+    return { ...ids, ...more, cp1: ids.checkpointIds[0], maya: ids.studentIds[2] };
 }
