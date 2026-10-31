@@ -47,6 +47,7 @@ pages.settings = {
         if (tabId === 'deleted') this.renderDeletedItems();
         if (tabId === 'calendar') this.populateArchiveYearDropdown();
         if (tabId === 'data') { this.renderDataCheck(); this.renderActivityLog(); skillsMigration.initCard(); }
+        if (tabId === 'data') releaseCheck.render();   // i304
         if (tabId === 'preferences') {
             this.loadDefaultPeriod();
             this.loadBackupReminderDays();
@@ -1280,6 +1281,12 @@ pages.settings = {
     // Staging area for import data — set by importData, read by executeImport
     _importStaged: null,
 
+    // i298 (lesson 50): Merge matches most tables by id, so between devices that each added records
+    // since they last synced, one device's records overwrite the other's. A backup file doesn't say
+    // whether the devices were in sync, so the warning shows for every Merge.
+    MERGE_WARNING: "Use Merge only if this device and the device that made this file were in sync before either added anything new. " +
+        "If both have added records since they last synced, Merge can overwrite some of one device's records with the other's; Replace All is the safe choice.",
+
     // ── Import safety (plan row 1-01, DL3) ──
     // Tables a Replace All file must contain (every export has them, even when empty)
     _IMPORT_CORE_TABLES: ['students', 'classes', 'activities', 'enrollments', 'settings'],
@@ -1528,6 +1535,7 @@ pages.settings = {
                 <p><strong>Replace All:</strong> Wipe current data and use backup data only.</p>
                 <p><strong>Sync Setup Only:</strong> Import assignments, students, teams, skills, standards, and other setup data from the backup. Students, assignments and checkpoints are <em>merged</em> (newer wins) and never removed. <em>Never touches</em> attendance, submissions, or checkpoint completions — your daily classroom data stays safe.</p>
                 <p><strong>Merge (Newer Wins):</strong> Keep all local records. Add new records from backup. For conflicts, keep whichever has the newer timestamp.</p>
+                <p id="import-merge-warning" style="color: var(--color-warning);">⚠️ ${escapeHtml(this.MERGE_WARNING)}</p>
             </div>`;
 
             // P16 N6: say which side of the skills migration the file and this device are on
@@ -1572,6 +1580,9 @@ pages.settings = {
             ui.showToast('No import data staged.', 'error');
             return;
         }
+
+        // i298: asked again when Merge is pressed; Cancel leaves the preview open
+        if (mode === 'merge' && !confirm(this.MERGE_WARNING + '\n\nOK: merge anyway. Cancel: go back.')) return;
 
         ui.hideModal('modal-import-preview');
 
@@ -2595,6 +2606,175 @@ pages.settings = {
         }
     },
 
+    // ── i300 / i243 / i088: "Update existing equipment (preview first)" ──
+    // Reads E4's room count as a CSV with a header row, or a JSON array, with the columns item,
+    // category, shopflow_category, consumable, quantity, unit, location, source, reorder_at, notes.
+    // Matches ShopFlow's items by name (trimmed, any case). Name and category are never changed
+    // (i088); a category difference is only listed. Quantity, location, notes, threshold (from
+    // reorder_at), unit and consumable may change; a blank cell changes nothing. Items not in the
+    // file are left alone. Nothing is written until she presses Apply, and then in one transaction.
+    _equipmentPlan: null,
+    EQUIPMENT_CATEGORIES: ['tools', 'materials', 'electronics', 'safety', 'other'],
+
+    // A CSV with a header row → [{ header: value }]. Quoted cells, doubled quotes, commas and line
+    // breaks inside quotes, CRLF or LF, and a byte-order mark are all handled.
+    _parseCsv: function(text) {
+        const s = String(text).replace(/^﻿/, '');
+        const rows = [];
+        let row = [], cell = '', q = false;
+        for (let i = 0; i < s.length; i++) {
+            const c = s[i];
+            if (q) {
+                if (c === '"') { if (s[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+                else cell += c;
+            } else if (c === '"') q = true;
+            else if (c === ',') { row.push(cell); cell = ''; }
+            else if (c === '\n' || c === '\r') {
+                if (c === '\r' && s[i + 1] === '\n') i++;
+                row.push(cell); cell = '';
+                if (row.some(v => v.trim() !== '')) rows.push(row);
+                row = [];
+            } else cell += c;
+        }
+        row.push(cell);
+        if (row.some(v => v.trim() !== '')) rows.push(row);
+        if (!rows.length) return [];
+        const head = rows[0].map(h => h.trim().toLowerCase());
+        return rows.slice(1).map(r => Object.fromEntries(head.map((h, i) => [h, r[i] === undefined ? '' : r[i]])));
+    },
+
+    // One file row → the fields this mode reads (null = blank, so not changed)
+    _equipmentRow: function(r) {
+        const text = v => (v === undefined || v === null || String(v).trim() === '' ? null : String(v).trim());
+        const num = v => { const t = text(v); if (t === null) return null; const n = Number(t); return isFinite(n) && n >= 0 ? n : NaN; };
+        const bool = v => {
+            const t = text(v); if (t === null) return null;
+            if (/^(y|yes|true|1|consumable)$/i.test(t)) return true;
+            if (/^(n|no|false|0)$/i.test(t)) return false;
+            return undefined;
+        };
+        const cat = text(r.shopflow_category) || text(r.category);
+        return {
+            name: text(r.item) || text(r.name),
+            category: cat ? cat.toLowerCase() : null,
+            quantity: num(r.quantity),
+            threshold: num(r.reorder_at),
+            unit: text(r.unit),
+            consumable: bool(r.consumable),
+            location: text(r.location),
+            notes: text(r.notes)
+        };
+    },
+
+    // The preview: what would change, with nothing written
+    _equipmentPlanFor: function(fileRows, inventory) {
+        const key = n => String(n || '').trim().toLowerCase();
+        const live = inventory.filter(i => !i.deletedAt);
+        const byName = new Map();
+        for (const i of live) { const k = key(i.name); if (!byName.has(k)) byName.set(k, []); byName.get(k).push(i); }
+        const rows = fileRows.map(r => this._equipmentRow(r));
+        const fileCount = new Map();
+        for (const r of rows) if (r.name) fileCount.set(key(r.name), (fileCount.get(key(r.name)) || 0) + 1);
+        const plan = { updates: [], adds: [], unchanged: 0, duplicates: [], categoryDiffers: [], problems: [], notInFile: 0 };
+        const seenDup = new Set();
+        const matched = new Set();
+        rows.forEach((r, idx) => {
+            const line = idx + 2;   // row 1 is the header
+            if (!r.name) { plan.problems.push(`Row ${line}: no item name, skipped`); return; }
+            const bad = ['quantity', 'threshold'].filter(f => Number.isNaN(r[f]));
+            if (bad.length) { plan.problems.push(`Row ${line} (${r.name}): ${bad.map(f => f === 'threshold' ? 'reorder_at' : f).join(' and ')} is not a number, skipped`); return; }
+            if (r.consumable === undefined) { plan.problems.push(`Row ${line} (${r.name}): consumable isn't yes or no, skipped`); return; }
+            const k = key(r.name);
+            const items = byName.get(k) || [];
+            if (fileCount.get(k) > 1 || items.length > 1) {
+                if (!seenDup.has(k)) { seenDup.add(k); plan.duplicates.push(`${r.name} (${fileCount.get(k)} in the file, ${items.length} in ShopFlow)`); }
+                items.forEach(i => matched.add(i.id));
+                return;
+            }
+            if (items.length === 0) {
+                const category = this.EQUIPMENT_CATEGORIES.includes(r.category) ? r.category : 'other';
+                const add = { name: r.name, category, quantity: r.quantity ?? 0, threshold: r.threshold ?? 0, location: r.location || '', notes: r.notes || '' };
+                if (r.unit !== null) add.unit = r.unit;
+                if (r.consumable !== null) add.consumable = r.consumable;
+                plan.adds.push(add);
+                return;
+            }
+            const item = items[0];
+            matched.add(item.id);
+            if (r.category && key(r.category) !== key(item.category)) plan.categoryDiffers.push(`${item.name}: ShopFlow "${item.category || ''}", file "${r.category}" (category differs, not changed)`);
+            const changes = {};
+            for (const f of ['quantity', 'threshold', 'unit', 'consumable', 'location', 'notes']) {
+                if (r[f] === null) continue;
+                const now = item[f] === undefined ? null : item[f];
+                if (now !== r[f]) changes[f] = r[f];
+            }
+            if (Object.keys(changes).length) plan.updates.push({ id: item.id, name: item.name, changes, before: Object.fromEntries(Object.keys(changes).map(f => [f, item[f] === undefined ? null : item[f]])) });
+            else plan.unchanged++;
+        });
+        plan.notInFile = live.filter(i => !matched.has(i.id)).length;
+        return plan;
+    },
+
+    updateEquipmentPreview: async function(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        event.target.value = '';
+        try {
+            const text = await file.text();
+            let fileRows;
+            if (/\.json$/i.test(file.name) || /^\s*\[/.test(text)) {
+                fileRows = JSON.parse(text);
+                if (!Array.isArray(fileRows)) throw new Error('Expected a JSON array or a CSV with a header row');
+            } else fileRows = this._parseCsv(text);
+            if (!fileRows.length) throw new Error('The file has no rows');
+            const plan = this._equipmentPlanFor(fileRows, await db.inventory.toArray());
+            this._equipmentPlan = plan;
+            const list = (title, items, id) => items.length
+                ? `<p style="margin: var(--space-sm) 0 0;"><strong>${escapeHtml(title)}</strong></p><ul id="${id}" style="margin: 0; padding-left: 1.2em; max-height: 160px; overflow: auto;">${items.map(t => `<li>${escapeHtml(t)}</li>`).join('')}</ul>` : '';
+            const show = v => (v === null || v === '' ? '(blank)' : v === true ? 'yes' : v === false ? 'no' : String(v));
+            const labels = { quantity: 'quantity', threshold: 'low-stock threshold', unit: 'unit', consumable: 'consumable', location: 'location', notes: 'notes' };
+            document.getElementById('equipment-update-body').innerHTML = `
+                <p id="equipment-update-counts"><strong>${plan.updates.length}</strong> will update · <strong>${plan.adds.length}</strong> will add · <strong>${plan.unchanged}</strong> unchanged · <strong>${plan.duplicates.length}</strong> duplicate names (not changed) · <strong>${plan.notInFile}</strong> in ShopFlow but not in the file (left alone)</p>
+                <p style="font-size: var(--font-size-body-small); color: var(--color-text-secondary);">Names and categories are never changed. A blank cell in the file changes nothing. Nothing has been changed yet.</p>
+                ${list('Will update', plan.updates.map(u => `${u.name}: ` + Object.keys(u.changes).map(f => `${labels[f]} ${show(u.before[f])} → ${show(u.changes[f])}`).join('; ')), 'equipment-update-list')}
+                ${list('Will add', plan.adds.map(a => `${a.name} (${a.category}, ${a.quantity}${a.unit ? ' ' + a.unit : ''})`), 'equipment-add-list')}
+                ${list('Names that match more than one row or item: not changed, check them by hand', plan.duplicates, 'equipment-dup-list')}
+                ${list('Category differs, not changed', plan.categoryDiffers, 'equipment-category-list')}
+                ${list('Rows skipped', plan.problems, 'equipment-problem-list')}`;
+            document.getElementById('equipment-update-apply').disabled = !(plan.updates.length || plan.adds.length);
+            ui.showModal('modal-equipment-update');
+        } catch (err) {
+            console.error('Equipment update preview error:', err);
+            ui.showToast('Could not read the equipment file: ' + err.message + '. Nothing was changed.', 'error');
+        }
+    },
+
+    applyEquipmentUpdate: async function() {
+        const plan = this._equipmentPlan;
+        if (!plan || !(plan.updates.length || plan.adds.length)) return;
+        const snapshotId = await autoBackup.saveSafety('Before equipment update');
+        if (!snapshotId) {
+            ui.showToast('Could not save a safety snapshot first, so nothing was changed.', 'error');
+            return;
+        }
+        try {
+            const now = new Date().toISOString();
+            await db.transaction('rw', db.inventory, async () => {
+                for (const u of plan.updates) await db.inventory.update(u.id, { ...u.changes, updatedAt: now });
+                for (const a of plan.adds) await db.inventory.add({ ...a, itemNumber: '', createdAt: now, updatedAt: now });
+            });
+            this._equipmentPlan = null;
+            ui.hideModal('modal-equipment-update');
+            driveSync.markDirty();
+            await logAction('import', 'inventory', null, `Equipment update: ${plan.updates.length} updated, ${plan.adds.length} added`);
+            ui.showToast(`Equipment: ${plan.updates.length} updated, ${plan.adds.length} added, ${plan.unchanged} unchanged. A "Before equipment update" snapshot is under Auto-Backups.`, 'success', 8000);
+            if (typeof pages.inventory !== 'undefined' && pages.inventory.render) pages.inventory.render();
+        } catch (err) {
+            console.error('Equipment update failed:', err);
+            ui.showToast('The equipment update failed, so nothing was changed: ' + err.message, 'error');
+        }
+    },
+
     importStandards: async function(event) {
         const files = Array.from(event.target.files);
         if (!files.length) return;
@@ -2795,6 +2975,41 @@ pages.settings = {
         return problems;
     },
 
+    // i313: Step 7 matches checkpoints by position, and completion records follow the checkpoint
+    // record, not its content. So a re-import that would delete a checkpoint with completion records,
+    // or put a differently titled checkpoint in its place, is refused before anything is written.
+    // A title change is allowed when only capitals or spaces differ, or when the guide's checkpoint
+    // carries the same id stored on the record by the last import.
+    checkpointReimportProblems: async function(guide, activityId) {
+        const problems = [];
+        const existingCps = (await db.checkpoints.where('activityId').equals(activityId).toArray())
+            .sort((a, b) => (a.number || 0) - (b.number || 0));
+        const sameTitle = (a, b) => String(a || '').trim().replace(/\s+/g, ' ').toLowerCase()
+            === String(b || '').trim().replace(/\s+/g, ' ').toLowerCase();
+        const named = t => (typeof t === 'string' && t.trim()) ? `"${t}"` : 'untitled';
+        const records = n => `${n} completion record${n === 1 ? '' : 's'}`;
+        const len = guide.checkpoints.length;
+        for (let i = 0; i < existingCps.length; i++) {
+            const old = existingCps[i];
+            const n = await db.checkpointCompletions.where('checkpointId').equals(old.id).count();
+            if (!n) continue;
+            const num = old.number || i + 1;
+            if (i >= len) {
+                problems.push(`Checkpoint ${num} (${named(old.title)}) has ${records(n)}, but the new "checkpoints" list has only ${len}. Re-importing ${guide.contractCode} would delete checkpoint ${num} and its completion records. Keep it in the list, in the same place.`);
+                continue;
+            }
+            const cp = guide.checkpoints[i];
+            if (sameTitle(cp.title, old.title)) continue;
+            const storedId = old.guideCheckpointId;
+            const hasStoredId = storedId !== undefined && storedId !== null && storedId !== '';
+            if (hasStoredId && cp.id !== undefined && cp.id !== null && String(cp.id) === String(storedId)) continue;
+            problems.push(`Checkpoint ${num} (${named(old.title)}) has ${records(n)}, but the guide's checkpoint ${i + 1} is ${named(cp.title)}. Checkpoints are matched by position, so those completion records would move to ${named(cp.title)}. A checkpoint was likely removed, inserted or moved in the list: keep each checkpoint that has completion records in its old place, and add new ones at the end. Rewriting a checkpoint's wording under the same title is still allowed.`
+                + (!hasStoredId ? ' (No checkpoint id is stored for it, so only the titles were compared.)'
+                    : ` (Its id from the last import is "${storedId}"; the guide's checkpoint ${i + 1} has ${(cp.id === undefined || cp.id === null) ? 'no id' : `id "${cp.id}"`}.)`));
+        }
+        return problems;
+    },
+
     importContractGuide: async function(mode, event) {
         try {
             // ── Step 1: Read JSON ──
@@ -2832,15 +3047,17 @@ pages.settings = {
             // i175: the whole guide's shape is checked before anything is written. A problem is
             // refused, naming the checkpoint (or list) and field, and nothing is saved.
             const problems = this.contractGuideProblems(guide);
-            // An empty checkpoints list on a re-import would delete every checkpoint of the assignment
-            // and all their completion records, so it's refused (META, 30 Sep). A new assignment may
-            // have none.
-            if (!problems.length && Array.isArray(guide.checkpoints) && guide.checkpoints.length === 0) {
+            if (!problems.length && Array.isArray(guide.checkpoints)) {
                 const match = excludeDeleted(await db.activities.toArray()).find(a =>
                     typeof a.contractCode === 'string' && a.contractCode.toLowerCase() === guide.contractCode.toLowerCase());
-                if (match) {
+                // An empty checkpoints list on a re-import would delete every checkpoint of the assignment
+                // and all their completion records, so it's refused (META, 30 Sep). A new assignment may
+                // have none.
+                if (match && guide.checkpoints.length === 0) {
                     const n = await db.checkpoints.where('activityId').equals(match.id).count();
                     problems.push(`"checkpoints" is an empty list. Re-importing ${guide.contractCode} with it would delete all ${n} of its checkpoints and their completion records. Leave "checkpoints" out to keep them.`);
+                } else if (match) {
+                    problems.push(...await this.checkpointReimportProblems(guide, match.id));
                 }
             }
             if (problems.length) {
@@ -3106,6 +3323,9 @@ pages.settings = {
                             milestone: cp.milestone || '',
                             lookFor: cp.lookFor || '',
                             afterStep: (cp.afterStep === 0 || cp.afterStep) ? cp.afterStep : null,
+                            // i313: the guide's own id for the checkpoint, so a later re-import can tell
+                            // a renamed checkpoint from a different one in the same place
+                            guideCheckpointId: (cp.id === 0 || cp.id) ? String(cp.id) : null,
                             skillsAssessable: resolvedAssessable,
                             certificationDemos: resolvedCertDemos,
                             questions: (cp.questions || []).map(q => ({

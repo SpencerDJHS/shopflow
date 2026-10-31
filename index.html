@@ -94,9 +94,15 @@
                 const reloadNow = () => {
                     if (holdForUnsaved()) return;
                     if (tracked && !syncWork.startClosing()) { setTimeout(reloadNow, 250); return; }
-                    // Tell the waiting SW to take over immediately
-                    if (waitingWorker) waitingWorker.postMessage({ type: 'SKIP_WAITING' });
-                    window.location.reload();
+                    const finish = () => {
+                        // Tell the waiting SW to take over immediately
+                        if (waitingWorker) waitingWorker.postMessage({ type: 'SKIP_WAITING' });
+                        window.location.reload();
+                    };
+                    // i304: the Release Check records the Data check counts just before the reload
+                    // (localStorage only; it gives up after a few seconds rather than hold the reload)
+                    if (typeof releaseCheck !== 'undefined') releaseCheck.recordBeforeReload().then(finish, finish);
+                    else finish();
                 };
                 reloadNow();
             }
@@ -125,10 +131,12 @@
     <script src="js/features/masteryEngine.js"></script>
     <script src="js/features/progressbookExport.js"></script>
     <script src="js/features/pinLock.js"></script>
+    <script src="js/features/releaseCheck.js"></script>
     <script src="js/features/exportManager.js"></script>
     <script src="js/features/autoTasks.js"></script>
     <script src="js/features/appFeatures.js"></script>
     <script src="js/features/hubSync.js"></script>
+    <script src="js/features/ratingsExport.js"></script>
 
     <!-- Pages -->
     <script src="js/pages/dashboard.js"></script>
@@ -1160,34 +1168,6 @@
                                 </div>
                             </div>
 
-                            <!-- Skill & PP Assignment Status -->
-                            <div id="fe-skill-link-status" style="display: none; padding: var(--space-base); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); margin-bottom: var(--space-base);">
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-sm);">
-                                    <strong style="font-size: var(--font-size-body-small);">Skill & PP Assignments</strong>
-                                    <span id="fe-skill-link-summary" style="font-size: var(--font-size-caption); color: var(--color-text-secondary);"></span>
-                                </div>
-                                <!-- Grade Category Mapping -->
-                                <div style="display: flex; gap: var(--space-sm); flex-wrap: wrap; margin-bottom: var(--space-sm); padding-bottom: var(--space-sm); border-bottom: 1px solid var(--color-border);">
-                                    <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 160px;">
-                                        <label class="form-label" style="font-size: var(--font-size-caption);">Skills Category:</label>
-                                        <select id="fe-skills-grade-category" class="form-select" data-no-dirty style="font-size: var(--font-size-body-small);" onchange="pages.activityEdit.saveGradeCategorySelection()">
-                                            <option value="">None (no category)</option>
-                                        </select>
-                                    </div>
-                                    <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 160px;">
-                                        <label class="form-label" style="font-size: var(--font-size-caption);">PP Category:</label>
-                                        <select id="fe-pp-grade-category" class="form-select" data-no-dirty style="font-size: var(--font-size-body-small);" onchange="pages.activityEdit.saveGradeCategorySelection()">
-                                            <option value="">None (no category)</option>
-                                        </select>
-                                    </div>
-                                </div>
-                                <div id="fe-skill-link-list" style="font-size: var(--font-size-body-small); margin-bottom: var(--space-sm);"></div>
-                                <div style="display: flex; gap: var(--space-sm); flex-wrap: wrap;">
-                                    <button type="button" class="btn btn--primary" id="fe-create-skill-assignments-btn" onclick="pages.activityEdit.createSkillAssignments()" style="font-size: var(--font-size-body-small);">Create Skill Assignments</button>
-                                    <button type="button" class="btn btn--secondary" id="fe-create-pp-assignment-btn" onclick="pages.activityEdit.createPPAssignment()" style="font-size: var(--font-size-body-small);">Create PP Assignment</button>
-                                </div>
-                            </div>
-
                             <!-- Assignment selector + create (legacy — for manual linking) -->
                             <div class="form-group" id="fe-cw-group" style="display: none;">
                                 <label class="form-label">Assignment</label>
@@ -1810,6 +1790,19 @@
                             </div>
                         </div>
                     </div>
+                    <!-- Release Check (i304, roadmap q03): table counts before and after an update, this device only -->
+                    <div class="card" id="release-check-card" style="margin-bottom:var(--space-md);">
+                        <div class="card__header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--space-sm);">
+                            <h3>Release Check</h3>
+                            <button id="release-check-record-btn" class="btn btn--secondary btn--sm" onclick="releaseCheck.recordNow()">Record now</button>
+                        </div>
+                        <div class="card__body">
+                            <p style="font-size: var(--font-size-body-small); color: var(--color-text-secondary); margin-bottom: var(--space-base);">
+                                Counts only, no names, kept on this device only. When you tap the update bar to reload, the app records every table's count just before the reload and again when it starts. Every line should say Same, apart from the tables the app rebuilds itself.
+                            </p>
+                            <div id="release-check-body"><p style="color: var(--color-text-tertiary);">Loading…</p></div>
+                        </div>
+                    </div>
                     <!-- Skills migration (Draft 3), plan row 1-06 / i159: Preview and Verify change nothing; Run is PC only -->
                     <div class="card" id="skills-migration-card" style="margin-bottom:var(--space-md);">
                         <div class="card__header"><h3>Skills migration (Draft 3)</h3></div>
@@ -1842,6 +1835,15 @@
                                     One CSV with all student data — attendance, grades, checkpoints and skills, identified only by anonymous ID.
                                 </p>
                             </div>
+                            <!-- i263 / i299: the ratings export page, as a button -->
+                            <div style="margin-top: var(--space-base); padding-top: var(--space-base); border-top: 1px solid var(--color-border);">
+                                <button id="ratings-export-btn" class="btn btn--secondary" onclick="ratingsExport.open()" style="display: flex; align-items: center; gap: var(--space-sm);">
+                                    📈 Export ratings (CSV)
+                                </button>
+                                <p style="font-size: var(--font-size-body-small); color: var(--color-text-tertiary); margin-top: var(--space-xs);">
+                                    One row per skill rating (Student, Skill, Date, Rating) for your ratings spreadsheet. Saved to this device only; it holds student names.
+                                </p>
+                            </div>
                         </div>
                     </div>
                     <!-- Import Reference Data -->
@@ -1856,6 +1858,8 @@
                                 <input type="file" id="import-skills-file" accept=".json" style="display: none;" onchange="pages.settings.importSkillsLibrary(event)">
                                 <button class="btn btn--secondary" onclick="document.getElementById('import-equipment-file').click()">🔧 Import Equipment</button>
                                 <input type="file" id="import-equipment-file" accept=".json" style="display: none;" onchange="pages.settings.importEquipment(event)">
+                                <button class="btn btn--secondary" id="update-equipment-btn" onclick="document.getElementById('update-equipment-file').click()">🔄 Update existing equipment (preview first)</button>
+                                <input type="file" id="update-equipment-file" accept=".csv,.json" style="display: none;" onchange="pages.settings.updateEquipmentPreview(event)">
                                 <button class="btn btn--secondary" onclick="document.getElementById('import-standards-file').click()">📋 Import Standards</button>
                                 <input type="file" id="import-standards-file" accept=".json" style="display: none;" multiple onchange="pages.settings.importStandards(event)">
                             </div>
@@ -2284,8 +2288,12 @@
                             <select id="certify-tool" class="form-select"></select>
                         </div>
                         <div class="form-group">
+                            <label class="form-label" for="certify-date">Passed on *</label>
+                            <input type="date" id="certify-date" class="form-input">
+                        </div>
+                        <div class="form-group">
                             <label class="form-label">Notes</label>
-                            <input type="text" id="certify-notes" class="form-input" placeholder="e.g., Passed safety quiz 3/11/26">
+                            <input type="text" id="certify-notes" class="form-input" placeholder="e.g., Passed the safety quiz">
                         </div>
                         <div class="form-group">
                             <label class="form-label">Select Students</label>
@@ -2885,6 +2893,51 @@
     </div>
 
     <!-- Manage Flex Period Teachers Modal -->
+    <!-- Export ratings (CSV), i263 / i299: one row per skill rating, saved to this device only -->
+    <div id="modal-ratings-export" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="ratings-export-title">
+        <div class="modal">
+            <div class="modal__header">
+                <h3 id="ratings-export-title">Export ratings (CSV)</h3>
+                <button class="modal__close" aria-label="Close" onclick="ui.hideModal('modal-ratings-export')">&times;</button>
+            </div>
+            <div class="modal__body">
+                <div class="form-group">
+                    <label class="form-label" for="ratings-export-name">Student names</label>
+                    <select id="ratings-export-name" class="form-select">
+                        <option value="first-last">First Last</option>
+                        <option value="last-first">Last, First</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="ratings-export-skill">Skill names</label>
+                    <select id="ratings-export-skill" class="form-select">
+                        <option value="old">The names before the Draft 3 migration (as on your sheet now)</option>
+                        <option value="current">The names in ShopFlow now</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="ratings-export-from">Only ratings made on or after (leave empty for all ratings)</label>
+                    <input type="date" id="ratings-export-from" class="form-input">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="ratings-export-rating">Rating as</label>
+                    <select id="ratings-export-rating" class="form-select">
+                        <option value="letter">One letter (B, D, P, A)</option>
+                        <option value="word">Whole word (Beginning, Developing, Proficient, Advanced)</option>
+                    </select>
+                </div>
+                <button type="button" class="btn btn--primary" id="ratings-export-make" onclick="ratingsExport.make()">Make the rows</button>
+                <span id="ratings-export-status" role="status" style="margin-left: var(--space-sm); font-size: var(--font-size-body-small);"></span>
+                <pre id="ratings-export-out" style="display: none; white-space: pre-wrap; font-size: var(--font-size-caption); max-height: 300px; overflow: auto; border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-sm); margin-top: var(--space-sm);"></pre>
+                <div id="ratings-export-actions" style="display: none; gap: var(--space-sm); flex-wrap: wrap; margin-top: var(--space-sm);">
+                    <button type="button" class="btn btn--primary" onclick="ratingsExport.download()">📥 Save as CSV (with header)</button>
+                    <button type="button" class="btn btn--secondary" onclick="ratingsExport.copy()">📋 Copy rows (no header) for pasting</button>
+                </div>
+                <p style="font-size: var(--font-size-body-small); color: var(--color-text-tertiary); margin-top: var(--space-sm);">The CSV is saved as <code id="ratings-export-fname"></code> on this device only. It holds student names: keep it on this device, and delete it once it's in your sheet.</p>
+            </div>
+        </div>
+    </div>
+
     <!-- Progressbook exports: preview, then one CSV per category (plan row 3-08) -->
     <div id="modal-progressbook-export" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="progressbook-export-title">
         <div class="modal">
@@ -2893,6 +2946,21 @@
                 <button class="modal__close" aria-label="Close" onclick="progressbookExport.close()">&times;</button>
             </div>
             <div class="modal__body" id="progressbook-export-body"></div>
+        </div>
+    </div>
+
+    <!-- i300: Update existing equipment, preview first (nothing changes until Apply) -->
+    <div id="modal-equipment-update" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="equipment-update-title">
+        <div class="modal">
+            <div class="modal__header">
+                <h3 id="equipment-update-title">Update existing equipment: preview</h3>
+                <button class="modal__close" aria-label="Close" onclick="ui.hideModal('modal-equipment-update')">&times;</button>
+            </div>
+            <div class="modal__body" id="equipment-update-body"></div>
+            <div class="modal__footer">
+                <button class="btn btn--secondary" onclick="ui.hideModal('modal-equipment-update')">Cancel</button>
+                <button class="btn btn--primary" id="equipment-update-apply" onclick="pages.settings.applyEquipmentUpdate()">Apply</button>
+            </div>
         </div>
     </div>
 

@@ -530,6 +530,7 @@ pages.activityEdit = {
             if (publishRadio) publishRadio.checked = true;
             const assigneeRadio = document.querySelector('input[name="fe-assignee-mode"][value="ALL_STUDENTS"]');
             if (assigneeRadio) assigneeRadio.checked = true;
+            pages.activityEdit._resetCwState();   // i302: Create/Update buttons and the helper line too
         }
 
         // Populate class dropdown
@@ -1102,6 +1103,7 @@ pages.activityEdit = {
 
         // EP24 guard: write only to the record this form was opened for; never fall back to creating.
         const formFor = this._formFor;
+        const formToken = this._renderToken;   // i302: which open of the form this save belongs to
         const blocked = (why) => ui.showToast('Save blocked — nothing was saved. ' + why + ' Close this form and open Full Edit again.', 'error', 10000);
         if (!formFor) { blocked('This form did not finish loading.'); return; }
         if (formFor.mode === 'edit') {
@@ -1137,14 +1139,19 @@ pages.activityEdit = {
                 scoringType: 'mastery',
                 formUrl: formFields.formUrl,
                 formSpreadsheetId: formFields.formSpreadsheetId,
-                classroomLinks: (function() {
-                    const existing = state._classroomLinksTemp || {};
+                classroomLinks: (() => {
+                    // i302: a copy (the stored links are never changed in place). "Not linked" chosen for a
+                    // course removes its link; the course on screen keeps the assignment picked from a list
+                    // this open of the form loaded for it, never one left on screen from another assignment.
+                    const links = { ...(state._classroomLinksTemp || {}) };
+                    for (const c of this._unlinkCourses || []) delete links[c];
                     const courseId = document.getElementById('fe-classroom-course').value;
-                    const cwId = document.getElementById('fe-classroom-cw').value;
-                    if (courseId && cwId && cwId !== 'PENDING_CREATE') {
-                        existing[courseId] = cwId;
+                    const cwSelect = document.getElementById('fe-classroom-cw');
+                    const cwId = cwSelect.value;
+                    if (courseId && cwId && cwId !== 'PENDING_CREATE' && cwSelect.dataset.loadedFor === courseId + '|' + formToken) {
+                        links[courseId] = cwId;
                     }
-                    return Object.keys(existing).length > 0 ? existing : null;
+                    return Object.keys(links).length > 0 ? links : null;
             })(),
             materials: this._materials || [],
             studentGuideText: document.getElementById('fe-student-guide-text').value.trim() || null,
@@ -1219,7 +1226,7 @@ pages.activityEdit = {
             if (storedNow) this._keepUnchanged(activityData, storedNow);
 
             // --- Handle pending Classroom creations ---
-            await this._processPendingClassroomCreates(activityData, name, description, endDate);
+            await this._processPendingClassroomCreates(activityData, name, description, endDate, formToken);
 
             // --- Save the activity ---
             let activityId;
@@ -1245,10 +1252,17 @@ pages.activityEdit = {
             await this._saveLinkedSkills(activityId);
 
             if (typeof driveSync !== 'undefined') driveSync.markDirty();
-            state._classroomPendingCreate = {};
-            state._classroomLinksTemp = {};
+            // i302: a save still waiting on Classroom when another assignment was opened leaves that
+            // other form alone (its links, its "create on Save" choice, and the screen she's on).
+            // The same assignment opened again loaded the record from before this save, so it is closed as before.
+            const stillOpen = this._renderToken === formToken || (formFor.mode === 'edit' && state.editingActivityId === formFor.id);
+            if (stillOpen) {
+                state._classroomPendingCreate = {};
+                state._classroomLinksTemp = {};
+            }
 
             ui.showToast(formFor.mode === 'edit' ? 'Assignment updated' : 'Assignment created', 'success');
+            if (!stillOpen) return;
             if (typeof guards !== 'undefined') guards.markClean('page-activity-edit');   // 3-15: saved, so leaving doesn't ask
             this._formFor = null;
             state.editingActivityId = null;
@@ -1992,6 +2006,7 @@ pages.activityEdit = {
 
     loadCourses: async function() {
         const select = document.getElementById('fe-classroom-course');
+        const renderToken = this._renderToken;
         select.innerHTML = '<option value="">Loading...</option>';
         select.disabled = true;
 
@@ -2003,6 +2018,7 @@ pages.activityEdit = {
                 body: JSON.stringify({ token, action: 'list_classroom_courses' })
             });
             const result = await resp.json();
+            if (renderToken !== this._renderToken) return;   // i302: another assignment was opened meanwhile
 
             select.innerHTML = '<option value="">Not linked</option>';
             if (result.status === 'success' && result.courses) {
@@ -2030,6 +2046,7 @@ pages.activityEdit = {
 
     loadCoursework: async function() {
         const courseId = document.getElementById('fe-classroom-course').value;
+        this._courseChanged(courseId);   // i302
         const cwGroup = document.getElementById('fe-cw-group');
         const topicGroup = document.getElementById('fe-topic-group');
         const publishGroup = document.getElementById('fe-publish-group');
@@ -2038,7 +2055,6 @@ pages.activityEdit = {
         const materialsGroup = document.getElementById('fe-materials-group');
         if (!courseId) {
             [cwGroup, topicGroup, publishGroup, gradeCatGroup, assigneesGroup, materialsGroup].forEach(el => el.style.display = 'none');
-            document.getElementById('fe-skill-link-status').style.display = 'none';
             return;
         }
 
@@ -2059,14 +2075,11 @@ pages.activityEdit = {
             this._loadTopics(courseId),
             this._loadStudentChecklist(courseId)
         ]);
-
-        // Update skill/PP link status for this course
-        this.updateSkillLinkStatus();
     },
 
     _loadCourseworkDropdown: async function(courseId) {
         const cwSelect = document.getElementById('fe-classroom-cw');
-        const cwHelper = document.getElementById('fe-cw-helper');
+        const renderToken = this._renderToken;
         cwSelect.innerHTML = '<option value="">Loading...</option>';
         cwSelect.disabled = true;
 
@@ -2078,20 +2091,27 @@ pages.activityEdit = {
                 body: JSON.stringify({ token, action: 'list_classroom_coursework', courseId })
             });
             const result = await resp.json();
+            // i302: a reply for another open of the form, or for a course no longer chosen, changes nothing
+            if (renderToken !== this._renderToken || document.getElementById('fe-classroom-course').value !== courseId) return;
 
             cwSelect.innerHTML = '<option value="">Select assignment...</option>';
             if (result.status === 'success' && result.coursework) {
                 result.coursework.forEach(cw => {
                     cwSelect.innerHTML += `<option value="${cw.id}">${escapeHtml(cw.title)} (${cw.maxPoints || '?'} pts)</option>`;
                 });
+                cwSelect.dataset.loadedFor = courseId + '|' + renderToken;
 
-                // Restore linked coursework
+                // Restore linked coursework (i302: Update only for a link that's in the list)
                 const savedCwId = (state._classroomLinksTemp || {})[courseId];
-                if (savedCwId) {
+                const listed = !!savedCwId && result.coursework.some(cw => String(cw.id) === String(savedCwId));
+                if (this._pendingFor(courseId)) {
+                    cwSelect.innerHTML = '<option value="PENDING_CREATE" selected>⏳ Will create on Save</option>';
+                    this._showCwButtons('pending');
+                } else if (listed) {
                     cwSelect.value = savedCwId;
-                    cwHelper.textContent = 'Linked to this assignment';
-                    document.getElementById('fe-update-cw-btn').style.display = '';
-                    document.getElementById('fe-create-cw-btn').style.display = 'none';
+                    this._showCwButtons('linked');
+                } else {
+                    this._showCwButtons(savedCwId ? 'missing' : null);
                 }
             }
         } catch (err) {
@@ -2274,6 +2294,54 @@ pages.activityEdit = {
         }).join('');
     },
 
+    // ── i302: the Classroom section's Create / Update buttons and helper line follow what it shows ──
+    _cwCourse: null,        // the course the section last showed in this open of the form
+    _unlinkCourses: [],     // courses switched to "Not linked": Save removes their links
+
+    // mode: 'linked' (the saved link is in the course's list), 'missing' (a saved link the list doesn't
+    // have), 'pending' (created on Save, this course), or null (not linked)
+    _showCwButtons: function(mode) {
+        const createBtn = document.getElementById('fe-create-cw-btn');
+        const updateBtn = document.getElementById('fe-update-cw-btn');
+        const helper = document.getElementById('fe-cw-helper');
+        if (createBtn) createBtn.style.display = (mode === 'linked' || mode === 'pending') ? 'none' : '';
+        if (updateBtn) updateBtn.style.display = mode === 'linked' ? '' : 'none';
+        if (helper) helper.textContent = mode === 'linked' ? 'Linked to this assignment'
+            : mode === 'missing' ? 'This assignment\'s saved Classroom link was not found in this course in Classroom. Pick its assignment from the list, create a new one, or choose "Not linked" and Save to remove the link.'
+            : mode === 'pending' ? 'Will be created in Classroom when you save'
+            : '';
+    },
+
+    // Every open (create and edit) starts with nothing linked on screen
+    _resetCwState: function() {
+        this._cwCourse = null;
+        this._unlinkCourses = [];
+        const cwSelect = document.getElementById('fe-classroom-cw');
+        if (cwSelect) delete cwSelect.dataset.loadedFor;
+        this._showCwButtons(null);
+    },
+
+    // A "create on Save" chosen in this open of the form, for this course
+    _pendingFor: function(courseId) {
+        const p = (state._classroomPendingCreate || {})[courseId];
+        return p && p.renderToken === this._renderToken ? p : null;
+    },
+
+    // The course dropdown changed: the buttons start over, and "Not linked" after a course
+    // drops that course's link and its "create on Save" (picking the course again takes it back)
+    _courseChanged: function(courseId) {
+        const prev = this._cwCourse;
+        if (!courseId && prev) {
+            if ((state._classroomLinksTemp || {})[prev] && !this._unlinkCourses.includes(prev)) this._unlinkCourses.push(prev);
+            if (this._pendingFor(prev)) delete state._classroomPendingCreate[prev];
+        }
+        if (courseId) this._unlinkCourses = this._unlinkCourses.filter(c => c !== courseId);
+        this._cwCourse = courseId || null;
+        const cwSelect = document.getElementById('fe-classroom-cw');
+        if (cwSelect) delete cwSelect.dataset.loadedFor;
+        this._showCwButtons(null);
+    },
+
     createCoursework: function() {
         const courseId = document.getElementById('fe-classroom-course').value;
         if (!courseId) { ui.showToast('Select a course first', 'error'); return; }
@@ -2309,6 +2377,7 @@ pages.activityEdit = {
 
         state._classroomPendingCreate = state._classroomPendingCreate || {};
         state._classroomPendingCreate[courseId] = {
+            renderToken: this._renderToken,   // i302: created only by a save of this open of the form
             maxPoints,
             topicId,
             publishState: finalPublishState,
@@ -2320,7 +2389,7 @@ pages.activityEdit = {
         // Show visual confirmation
         const cwSelect = document.getElementById('fe-classroom-cw');
         cwSelect.innerHTML = '<option value="PENDING_CREATE" selected>⏳ Will create on Save</option>';
-        document.getElementById('fe-create-cw-btn').style.display = 'none';
+        this._showCwButtons('pending');
 
         ui.showToast('Assignment will be created in Classroom when you save', 'info');
         this.updateAllSummaries();
@@ -2378,9 +2447,10 @@ pages.activityEdit = {
         }
     },
 
-    _processPendingClassroomCreates: async function(activityData, name, description, endDate) {
+    _processPendingClassroomCreates: async function(activityData, name, description, endDate, formToken) {
         const pendingCreates = state._classroomPendingCreate || {};
-        const pendingCourseIds = Object.keys(pendingCreates);
+        // i302: only the creates chosen in the form being saved, so a link lands on the assignment it was made for
+        const pendingCourseIds = Object.keys(pendingCreates).filter(c => pendingCreates[c].renderToken === formToken);
         if (pendingCourseIds.length === 0) return;
 
         const webhook = localStorage.getItem('webhook_wildcat');
@@ -2579,254 +2649,4 @@ pages.activityEdit = {
           }
       }
   },
-
-    // i106: the saved assignment this form shows (EP24's _formFor); null for a new, unsaved one.
-    // (The old code read an id property that nothing ever set, so the Skill & PP box never showed.)
-    _savedActivityId: function() {
-        return this._formFor && this._formFor.mode === 'edit' ? this._formFor.id : null;
-    },
-
-    updateSkillLinkStatus: async function() {
-        const courseId = document.getElementById('fe-classroom-course').value;
-        const activityId = this._savedActivityId();
-        const statusContainer = document.getElementById('fe-skill-link-status');
-        const listContainer = document.getElementById('fe-skill-link-list');
-        const summaryEl = document.getElementById('fe-skill-link-summary');
-
-        if (!courseId || !activityId) {
-            if (statusContainer) statusContainer.style.display = 'none';
-            return;
-        }
-
-        statusContainer.style.display = '';
-        const activitySkills = await getLiveSkillLinks(activityId);
-        const skillIds = activitySkills.map(as => as.skillId);
-        const skills = (await db.skills.bulkGet(skillIds)).filter(s => s && !isSkillHidden(s));
-
-        // Check which skills have Classroom links for this course
-        let linkedCount = 0;
-        let html = '';
-        for (const skill of skills) {
-            const links = skill.classroomLinks || {};
-            const isLinked = !!links[courseId];
-            if (isLinked) linkedCount++;
-            html += `<div style="display: flex; align-items: center; gap: var(--space-xs); padding: 2px 0;">
-                <span style="color: ${isLinked ? 'var(--color-success)' : 'var(--color-text-tertiary)'};">${isLinked ? '✅' : '⬜'}</span>
-                <span>${escapeHtml(skill.name)}</span>
-            </div>`;
-        }
-
-        // PP status: its own link (ppClassroomLinks), never the assignment's own classroomLinks,
-        // which Push to Classroom sends grades to
-        const activity = await db.activities.get(activityId);
-        const ppLinked = !!(activity && activity.ppClassroomLinks && activity.ppClassroomLinks[courseId]);
-        html += `<div style="display: flex; align-items: center; gap: var(--space-xs); padding: 2px 0; margin-top: var(--space-xs); border-top: 1px solid var(--color-border); padding-top: var(--space-xs);">
-            <span style="color: ${ppLinked ? 'var(--color-success)' : 'var(--color-text-tertiary)'};">${ppLinked ? '✅' : '⬜'}</span>
-            <span style="font-weight: 600;">Professional Practice</span>
-        </div>`;
-
-        listContainer.innerHTML = html;
-        summaryEl.textContent = `${linkedCount}/${skills.length} skills linked${ppLinked ? ', PP linked' : ''}`;
-
-        // Hide/show buttons based on what's already linked
-        const createSkillBtn = document.getElementById('fe-create-skill-assignments-btn');
-        const createPPBtn = document.getElementById('fe-create-pp-assignment-btn');
-        if (createSkillBtn) createSkillBtn.style.display = linkedCount < skills.length ? '' : 'none';
-        if (createPPBtn) createPPBtn.style.display = ppLinked ? 'none' : '';
-
-        // Populate grade category dropdowns from course data
-        const courseData = (this._courseData || {})[courseId];
-        const skillsCatSelect = document.getElementById('fe-skills-grade-category');
-        const ppCatSelect = document.getElementById('fe-pp-grade-category');
-        if (courseData && courseData.gradeCategories && courseData.gradeCategories.length > 0) {
-            const cats = courseData.gradeCategories;
-            const savedSkillsCat = localStorage.getItem('classroom-skills-category-' + courseId) || '';
-            const savedPPCat = localStorage.getItem('classroom-pp-category-' + courseId) || '';
-
-            skillsCatSelect.innerHTML = '<option value="">None (no category)</option>';
-            ppCatSelect.innerHTML = '<option value="">None (no category)</option>';
-            cats.forEach(cat => {
-                const weightPct = cat.weight ? (cat.weight / 10000).toFixed(0) + '%' : '';
-                const label = escapeHtml(cat.name) + (weightPct ? ' (' + weightPct + ')' : '');
-                skillsCatSelect.innerHTML += '<option value="' + cat.id + '" data-name="' + escapeHtml(cat.name) + '">' + label + '</option>';
-                ppCatSelect.innerHTML += '<option value="' + cat.id + '" data-name="' + escapeHtml(cat.name) + '">' + label + '</option>';
-            });
-
-            // Restore saved selections, or auto-match by name
-            if (savedSkillsCat) {
-                skillsCatSelect.value = savedSkillsCat;
-            } else {
-                const autoSkill = cats.find(c => /skill/i.test(c.name));
-                if (autoSkill) skillsCatSelect.value = autoSkill.id;
-            }
-            if (savedPPCat) {
-                ppCatSelect.value = savedPPCat;
-            } else {
-                const autoPP = cats.find(c => /profess|practice|pp/i.test(c.name));
-                if (autoPP) ppCatSelect.value = autoPP.id;
-            }
-
-            // Auto-save the initial selection
-            this.saveGradeCategorySelection();
-        }
-    },
-
-    saveGradeCategorySelection: function() {
-        const courseId = document.getElementById('fe-classroom-course').value;
-        if (!courseId) return;
-        const skillsCatId = document.getElementById('fe-skills-grade-category').value;
-        const ppCatId = document.getElementById('fe-pp-grade-category').value;
-        if (skillsCatId) localStorage.setItem('classroom-skills-category-' + courseId, skillsCatId);
-        else localStorage.removeItem('classroom-skills-category-' + courseId);
-        if (ppCatId) localStorage.setItem('classroom-pp-category-' + courseId, ppCatId);
-        else localStorage.removeItem('classroom-pp-category-' + courseId);
-    },
-
-    createSkillAssignments: async function() {
-        const courseId = document.getElementById('fe-classroom-course').value;
-        const activityId = this._savedActivityId();
-        if (!courseId) {
-            ui.showToast('Select a Classroom course first', 'warning');
-            return;
-        }
-        if (!activityId) {
-            ui.showToast('Save the assignment first, then create its Classroom assignments.', 'warning');
-            return;
-        }
-
-        const webhookUrl = localStorage.getItem('webhook_wildcat');
-        const token = localStorage.getItem('webhook_token') || '';
-        const skillsCatId = localStorage.getItem('classroom-skills-category-' + courseId) || '';
-        const skillsCatName = document.getElementById('fe-skills-grade-category')?.selectedOptions?.[0]?.dataset?.name || 'Skills';
-
-        if (!webhookUrl) {
-            ui.showToast('No webhook URL configured', 'error');
-            return;
-        }
-
-        const activitySkills = await getLiveSkillLinks(activityId);
-        const skillIds = activitySkills.map(as => as.skillId);
-        const skills = (await db.skills.bulkGet(skillIds)).filter(s => s && !isSkillHidden(s));
-
-        // Only create for skills not yet linked to this course
-        const toCreate = skills.filter(s => !(s.classroomLinks || {})[courseId]);
-        if (toCreate.length === 0) {
-            ui.showToast('All skills already linked to this course', 'info');
-            return;
-        }
-
-        if (!confirm(`Create ${toCreate.length} skill assignment(s) in Classroom?`)) return;
-
-        const btn = document.getElementById('fe-create-skill-assignments-btn');
-        if (btn) { btn.disabled = true; btn.textContent = 'Creating...'; }
-
-        let created = 0;
-        for (const skill of toCreate) {
-            try {
-                const payload = {
-                    token: token,
-                    action: 'create_classroom_coursework',
-                    courseId: courseId,
-                    title: skill.name,
-                    description: 'Skill mastery assessment — scored by most recent observation',
-                    maxPoints: 100,
-                    publishState: 'PUBLISHED'
-                };
-                if (skillsCatId) {
-                    payload.gradeCategory = { id: skillsCatId, name: skillsCatName };
-                }
-
-                const resp = await webhookFetch(webhookUrl, { method: 'POST', body: JSON.stringify(payload) });
-                const result = await resp.json();
-
-                if (result.status === 'success') {
-                    // Store link on skill record
-                    const links = { ...(skill.classroomLinks || {}) };
-                    links[courseId] = result.courseworkId;
-                    await db.skills.update(skill.id, { classroomLinks: links, updatedAt: new Date().toISOString() });   // updatedAt: reaches the other device
-                    created++;
-                } else {
-                    ui.showToast(`Failed to create "${skill.name}": ${result.message}`, 'error');
-                }
-            } catch (err) {
-                ui.showToast(`Error creating "${skill.name}": ${err.message}`, 'error');
-            }
-        }
-
-        if (btn) { btn.disabled = false; btn.textContent = 'Create Skill Assignments'; }
-        ui.showToast(`✅ Created ${created}/${toCreate.length} skill assignments in Classroom`, 'success');
-        driveSync.markDirty();
-        this.updateSkillLinkStatus();
-    },
-
-    createPPAssignment: async function() {
-        const courseId = document.getElementById('fe-classroom-course').value;
-        const activityId = this._savedActivityId();
-        if (!courseId) {
-            ui.showToast('Select a Classroom course first', 'warning');
-            return;
-        }
-        if (!activityId) {
-            ui.showToast('Save the assignment first, then create its Classroom assignments.', 'warning');
-            return;
-        }
-
-        const activity = await db.activities.get(activityId);
-        if (!activity) return;
-
-        // Check if already linked (its own field: classroomLinks is the assignment's own Classroom link)
-        if (activity.ppClassroomLinks && activity.ppClassroomLinks[courseId]) {
-            ui.showToast('PP assignment already linked to this course', 'info');
-            return;
-        }
-
-        const webhookUrl = localStorage.getItem('webhook_wildcat');
-        const token = localStorage.getItem('webhook_token') || '';
-        const ppCatId = localStorage.getItem('classroom-pp-category-' + courseId) || '';
-        const ppCatName = document.getElementById('fe-pp-grade-category')?.selectedOptions?.[0]?.dataset?.name || 'Professional Practice';
-
-        if (!webhookUrl) {
-            ui.showToast('No webhook URL configured', 'error');
-            return;
-        }
-
-        // The activity's contract code (i106); older activities without one: the name's code, or the name
-        const contractCode = String(activity.contractCode || '').trim() || activity.name?.match(/^[A-Z]\d+/)?.[0] || activity.name || 'Activity';
-
-        const btn = document.getElementById('fe-create-pp-assignment-btn');
-        if (btn) { btn.disabled = true; btn.textContent = 'Creating...'; }
-
-        try {
-            const payload = {
-                token: token,
-                action: 'create_classroom_coursework',
-                courseId: courseId,
-                title: `${contractCode}: Professional Practice`,
-                description: 'Holistic assessment of checkpoint completion, pacing, deliverables, and teamwork',
-                maxPoints: 100,
-                publishState: 'PUBLISHED'
-            };
-            if (ppCatId) {
-                payload.gradeCategory = { id: ppCatId, name: ppCatName };
-            }
-
-            const resp = await webhookFetch(webhookUrl, { method: 'POST', body: JSON.stringify(payload) });
-            const result = await resp.json();
-
-            if (result.status === 'success') {
-                const links = { ...(activity.ppClassroomLinks || {}) };
-                links[courseId] = result.courseworkId;
-                await db.activities.update(activity.id, { ppClassroomLinks: links, updatedAt: new Date().toISOString() });
-                ui.showToast(`✅ Created PP assignment in Classroom`, 'success');
-                driveSync.markDirty();
-            } else {
-                ui.showToast('Failed: ' + (result.message || 'Unknown error'), 'error');
-            }
-        } catch (err) {
-            ui.showToast('Error: ' + err.message, 'error');
-        }
-
-        if (btn) { btn.disabled = false; btn.textContent = 'Create PP Assignment'; }
-        this.updateSkillLinkStatus();
-    },
 };

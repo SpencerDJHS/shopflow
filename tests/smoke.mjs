@@ -218,6 +218,9 @@ const PAGES = ['dashboard', 'students', 'teams', 'activities', 'inventory', 'cal
 const IGNORED = [/phosphor/i];
 const real = errs => errs.filter(e => !IGNORED.some(r => r.test(e)));
 
+// The local (New York) date of an ISO time, as the app shows it (i295)
+const formatDateLocal = iso => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+
 const tests = [
     {
         name: 'boot: the app opens with an empty database and no script errors',
@@ -1341,77 +1344,6 @@ const tests = [
         }
     },
     {
-        name: 'checkpoint ratings: only changes are written; one question about lower levels; deselecting removes the rating (3-03, DL6)',
-        fn: async ({ browser, base }) => {
-            const { page, errors, context } = await openApp(browser, base);
-            const ids = await seedFakeData(page);
-            const r = await page.evaluate(async ({ classId, activityId, teamId, cp, s0, s1 }) => {
-                const P = pages.checkpoint;
-                const now = new Date().toISOString();
-                const skillId = await db.skills.add({ name: 'Fake Checkpoint Skill', category: 'Design', createdAt: now });
-                await db.checkpoints.update(cp, { skillsAssessable: [skillId] });
-                await db.skillLevels.add({ studentId: s0, skillId, level: 'Advanced', createdAt: now, updatedAt: now });
-                await db.skillLevels.add({ studentId: s1, skillId, level: 'Proficient', createdAt: now, updatedAt: now });
-                let asked = 0;
-                window.confirm = () => { asked++; return false; };
-                const open = async () => {
-                    P.reset();
-                    P.selectedClass = await db.classes.get(classId);
-                    await P.selectActivity(await db.activities.get(activityId));
-                    await P.selectTeam(await db.teams.get(teamId));
-                    await P.selectCheckpoint(await db.checkpoints.get(cp));
-                };
-                const obs = () => db.skillObservations.where('activityId').equals(activityId).toArray();
-                const out = {};
-                await open();
-                P.setSkillRating(s0, skillId, 'Proficient');
-                P.setSkillRating(s1, skillId, 'Beginning');
-                await P.saveProgress();
-                out.askedFirst = asked;
-                out.levelKept = (await db.skillLevels.where('studentId').equals(s0).first()).level;
-                const before = (await obs()).map(o => o.updatedAt).join();
-                // Reopen and save without changes: nothing rewritten, nothing asked
-                await open();
-                await new Promise(res => setTimeout(res, 5));
-                asked = 0;
-                await P.saveProgress();
-                out.askedResave = asked;
-                out.rewritten = (await obs()).map(o => o.updatedAt).join() !== before;
-                // Deselect student 2's rating (tap it again) and save: it's removed
-                P.setSkillRating(s1, skillId, 'Beginning');
-                await P.saveProgress();
-                const all = await obs();
-                out.s1Live = all.filter(o => o.studentId === s1 && !o.deletedAt).length;
-                out.s1Deleted = all.filter(o => o.studentId === s1 && o.deletedAt).length;
-                await open();
-                out.shownAfterRemove = !!document.querySelector(`#skill-btn-${s1}-${skillId}-B.active`);
-                // Rating again adds a new row (a removed one isn't brought back)
-                P.setSkillRating(s1, skillId, 'Developing');
-                await P.saveProgress();
-                const again = (await obs()).filter(o => o.studentId === s1);
-                out.s1Rows = again.length;
-                out.s1LiveRating = again.filter(o => !o.deletedAt).map(o => o.rating).join();
-                // A removed rating that set the current level: the level stays, and she's told
-                const toasts = () => document.getElementById('toast-container').textContent;
-                out.noticeBefore = /The level stays at/.test(toasts());
-                P.setSkillRating(s0, skillId, 'Advanced');
-                await P.saveProgress();                       // sets student 1's level from this assignment
-                P.setSkillRating(s0, skillId, 'Advanced');    // tap again: removed
-                await P.saveProgress();
-                out.notice = /The level stays at Advanced; change it on the Skills page/.test(toasts());
-                out.levelAfter = (await db.skillLevels.where('studentId').equals(s0).first()).level;
-                return out;
-            }, { classId: ids.classId, activityId: ids.activityId, teamId: ids.teamId, cp: ids.checkpointIds[0], s0: ids.studentIds[0], s1: ids.studentIds[1] });
-            assert(r.askedFirst === 1 && r.levelKept === 'Advanced', 'lower-level question: ' + JSON.stringify(r));
-            assert(r.askedResave === 0 && !r.rewritten, 'an unchanged save rewrote ratings: ' + JSON.stringify(r));
-            assert(r.s1Live === 0 && r.s1Deleted === 1 && !r.shownAfterRemove, 'deselect: ' + JSON.stringify(r));
-            assert(r.s1Rows === 2 && r.s1LiveRating === 'Developing', 'rating again: ' + JSON.stringify(r));
-            assert(!r.noticeBefore && r.notice && r.levelAfter === 'Advanced', 'level-stays notice: ' + JSON.stringify(r));
-            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
-            await context.close();
-        }
-    },
-    {
         name: 'form import: one import for both buttons; D2 attempts; own feedback field; question numbers match the form (3-02)',
         fn: async ({ browser, base }) => {
             const stub = new WebhookStub();
@@ -1869,6 +1801,60 @@ const tests = [
                 assert(/Liam/.test(text) && /Maya/.test(text), `${where}: a student with only a removed or old-year Wildcat enrollment is missing: ${text.replace(/\s+/g, ' ').slice(0, 300)}`);
                 assert(!/Noah/.test(text), `${where}: this year's Wildcat student is listed as a drop-in: ${text.replace(/\s+/g, ' ').slice(0, 300)}`);
             }
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'wildcat roster: Notify Teachers reads the reply: counts teacher and student emails, refused addresses; a failure or a lost reply is not called success (1-19, i236)',
+        fn: async ({ browser, base }) => {
+            const stub = new WebhookStub();
+            const ls = { webhook_wildcat: 'https://script.google.com/macros/s/TEST/exec', webhook_token: 'test-token', 'automations-enabled': 'true' };
+            const { page, errors, context } = await openApp(browser, base, { stub, localStorageInit: ls });
+            const { studentIds: s } = await seedFakeData(page);
+            await page.evaluate(async s => {
+                const now = new Date().toISOString();
+                const today = getTodayString();
+                for (const [i, id] of [s[1], s[2]].entries()) {
+                    await db.students.update(id, { email: 'fake' + i + '@school.test', wildcatTeacherEmail: 'fake.teacher@school.test', wildcatTeacher: 'Fake Teacher' });
+                    await db.attendance.add({ studentId: String(id), date: today, period: 'wildcat', status: 'absent', createdAt: now });
+                }
+                router.navigate('dashboard');
+                await new Promise(res => setTimeout(res, 400));
+                await pages.dashboard.loadWildcatRoster();
+                window.__toasts = [];
+                const orig = ui.showToast.bind(ui);
+                ui.showToast = (m, type, ...r) => { window.__toasts.push(type + ': ' + String(m)); return orig(m, type, ...r); };
+            }, s);
+            const send = async () => page.evaluate(async () => {
+                window.__toasts = [];
+                window.confirm = () => true;
+                await db.settings.delete('wildcat-notified-' + getTodayString());   // i314: each press here is a first send
+                const btn = document.getElementById('btn-send-roster-emails');
+                if (btn) { btn.disabled = false; btn.textContent = '📧 Notify Teachers'; }
+                await pages.dashboard.sendRosterNotifications();
+                for (let i = 0; i < 50 && !window.__toasts.length; i++) await new Promise(r => setTimeout(r, 100));
+                return window.__toasts.slice();
+            });
+            // P29g's reply
+            stub.reply('send_roster_notifications', { status: 'success', sent: 1, teacherSent: 1, studentSent: 2, rejected: 0, noEmail: 0, failed: 0 });
+            let t = await send();
+            assert(t.includes('success: ✅ Wildcat emails: 1 teacher email, 2 student emails sent.'), 'P29g reply: ' + t.join(' | '));
+            stub.reply('send_roster_notifications', { status: 'success', sent: 1, teacherSent: 1, studentSent: 1, rejected: 1, noEmail: 1, failed: 0 });
+            t = await send();
+            assert(t.includes('warning: ⚠️ Wildcat emails: 1 teacher email, 1 student email sent, 2 refused (no email or wrong domain).'), 'P29g reply with refusals: ' + t.join(' | '));
+            // Today's webhook (v52): teacher emails and refused addresses only
+            stub.reply('send_roster_notifications', { status: 'success', sent: 1, rejected: 2, message: '2 address(es) outside the school domain were not emailed.' });
+            t = await send();
+            assert(t.includes('warning: ⚠️ Wildcat emails: 1 teacher email sent, 2 refused (no email or wrong domain).'), 'v52 reply: ' + t.join(' | '));
+            // A script error, and a lost reply: not success
+            stub.reply('send_roster_notifications', { status: 'error', message: 'Not enough email quota left today (1 left, 3 needed). Nothing was sent.' });
+            t = await send();
+            assert(t.some(x => x === 'error: Failed to send roster emails: Not enough email quota left today (1 left, 3 needed). Nothing was sent.') && !t.some(x => /^success/.test(x)), 'script error: ' + t.join(' | '));
+            stub.raw('send_roster_notifications', '<html>lost</html>');
+            t = await send();
+            assert(t.some(x => /^error: Failed to send roster emails: No reply from Google/.test(x)) && !t.some(x => /^success/.test(x)), 'lost reply: ' + t.join(' | '));
+            assert(stub.callsFor('send_roster_notifications').length === 5, 'a send was retried: ' + stub.callsFor('send_roster_notifications').length);
             assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
             await context.close();
         }
@@ -3344,72 +3330,6 @@ const tests = [
         }
     },
     {
-        name: 'classroom: Create Skill Assignments and Create PP Assignment work from Full Edit; PP has its own link and the contract code in its title (i106)',
-        fn: async ({ browser, base }) => {
-            const stub = new WebhookStub();
-            const ls = { webhook_wildcat: 'https://script.google.com/macros/s/TEST/exec', webhook_token: 'test-token' };
-            const { page, errors, context } = await openApp(browser, base, { stub, localStorageInit: ls });
-            const { activityId } = await seedFakeData(page);
-            const skillIds = await page.evaluate(async activityId => {
-                const now = new Date().toISOString();
-                const a = await db.skills.add({ name: 'Fake Skill Alpha', category: 'Design', createdAt: now });
-                const b = await db.skills.add({ name: 'Fake Skill Beta', category: 'Professional', createdAt: now });
-                for (const skillId of [a, b]) await db.activitySkills.add({ activityId, skillId, createdAt: now });
-                await db.activities.update(activityId, { contractCode: 'X9', classroomLinks: { 'FAKE-COURSE-1': 'OWN-CW' } });
-                return [a, b];
-            }, activityId);
-            stub.reply('create_classroom_coursework', { status: 'success', courseworkId: 'NEW-CW' });
-            await page.evaluate(id => modals.openFullEdit(id), activityId);
-            await page.waitForFunction(() => document.getElementById('fe-name')?.value === 'Test Activity 1', null, { timeout: 5000 });
-            await page.waitForTimeout(300);
-            const toasts = [];
-            await page.exposeFunction('__toast', m => toasts.push(m));
-            await page.evaluate(async () => {
-                const o = ui.showToast.bind(ui); ui.showToast = (m, t, d) => { window.__toast(m); return o(m, t, d); };
-                window.confirm = () => true;
-                const sel = document.getElementById('fe-classroom-course');
-                sel.innerHTML = '<option value="">Not linked</option><option value="FAKE-COURSE-1">Fake Course</option>';
-                sel.value = 'FAKE-COURSE-1';
-                await pages.activityEdit.updateSkillLinkStatus();
-            });
-            const box = await page.evaluate(() => ({ shown: document.getElementById('fe-skill-link-status').style.display !== 'none', summary: document.getElementById('fe-skill-link-summary').textContent }));
-            assert(box.shown && box.summary === '0/2 skills linked', 'the Skill & PP box: ' + JSON.stringify(box));
-            await page.evaluate(() => pages.activityEdit.createSkillAssignments());
-            await page.evaluate(() => pages.activityEdit.createPPAssignment());
-            const calls = stub.callsFor('create_classroom_coursework').map(c => c.body.title);
-            assert(JSON.stringify(calls) === JSON.stringify(['Fake Skill Alpha', 'Fake Skill Beta', 'X9: Professional Practice']), 'coursework created: ' + JSON.stringify(calls) + ' toasts: ' + JSON.stringify(toasts));
-            // the buttons refresh the summary without waiting for it, so wait for the line here
-            await page.waitForFunction(() => document.getElementById('fe-skill-link-summary').textContent === '2/2 skills linked, PP linked', null, { timeout: 5000 }).catch(() => {});
-            const stored = await page.evaluate(async ({ activityId, skillIds }) => {
-                const a = await db.activities.get(activityId);
-                const s = await db.skills.bulkGet(skillIds);
-                return { own: a.classroomLinks, pp: a.ppClassroomLinks, stamped: !!a.updatedAt, skills: s.map(x => x.classroomLinks), skillStamps: s.every(x => !!x.updatedAt), summary: document.getElementById('fe-skill-link-summary').textContent };
-            }, { activityId, skillIds });
-            assert(JSON.stringify(stored.own) === '{"FAKE-COURSE-1":"OWN-CW"}', "the assignment's own Classroom link changed: " + JSON.stringify(stored.own));
-            assert(JSON.stringify(stored.pp) === '{"FAKE-COURSE-1":"NEW-CW"}' && stored.stamped, 'the PP link: ' + JSON.stringify(stored));
-            assert(stored.skills.every(l => l && l['FAKE-COURSE-1'] === 'NEW-CW') && stored.skillStamps, 'the skill links: ' + JSON.stringify(stored));
-            assert(stored.summary === '2/2 skills linked, PP linked', 'summary after: ' + stored.summary);
-            // A second tap: nothing more is created
-            await page.evaluate(() => pages.activityEdit.createPPAssignment());
-            assert(stub.callsFor('create_classroom_coursework').length === 3 && toasts.includes('PP assignment already linked to this course'), 'second PP tap: ' + JSON.stringify(toasts));
-            // Saving Full Edit keeps both links
-            await page.evaluate(() => pages.activityEdit.save());
-            await page.waitForTimeout(800);
-            const after = await page.evaluate(id => db.activities.get(id).then(a => ({ own: a.classroomLinks, pp: a.ppClassroomLinks })), activityId);
-            assert(JSON.stringify(after) === '{"own":{"FAKE-COURSE-1":"OWN-CW"},"pp":{"FAKE-COURSE-1":"NEW-CW"}}', 'after Full Edit save: ' + JSON.stringify(after));
-            // A new, unsaved assignment is told to save first
-            toasts.length = 0;
-            await page.evaluate(async () => {
-                pages.activityEdit._formFor = { mode: 'create' };
-                await pages.activityEdit.createPPAssignment();
-                await pages.activityEdit.createSkillAssignments();
-            });
-            assert(toasts.filter(t => t === 'Save the assignment first, then create its Classroom assignments.').length === 2 && stub.callsFor('create_classroom_coursework').length === 3, 'unsaved: ' + JSON.stringify(toasts));
-            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
-            await context.close();
-        }
-    },
-    {
         name: 'full edit: a save keeps what it can\'t show (object role tasks, an unlisted phase, a number, extra brief keys, status); an edited field still saves (i123, 1-18)',
         fn: async ({ browser, base }) => {
             const { page, errors, context } = await openApp(browser, base);
@@ -3498,7 +3418,15 @@ const tests = [
                 });
             }, { aid: ids.activityId, s: ids.studentIds });
             const build = details => page.evaluate(async ({ aid, details }) => JSON.stringify(await hubSync.buildPayload(await db.activities.get(aid), 'test-token', { classroomDetails: details })), { aid: ids.activityId, details });
-            const old = details => page.evaluate(async ({ aid, details }) => JSON.stringify(await window.__oldHubBuild(aid, 'test-token', details)), { aid: ids.activityId, details });
+            // i294 adds one field, each student's email, at the end of each student row; everything else
+            // must still be byte-identical to the old builder (the fake names are unique, so they match rows)
+            const old = details => page.evaluate(async ({ aid, details }) => {
+                const p = await window.__oldHubBuild(aid, 'test-token', details);
+                const byName = {};
+                for (const s of await db.students.toArray()) byName[(s.firstName || '').trim() + ' ' + (s.lastName || '').trim().charAt(0) + '.'] = (s.email || '').trim();
+                for (const row of p.activities[0].students) row.email = byName[row.displayName];
+                return JSON.stringify(p);
+            }, { aid: ids.activityId, details });
             // 1. With no Classroom materials, byte-identical to before, for both kinds of link
             const [n1, o1, n2, o2] = [await build(true), await old(true), await build(false), await old(false)];
             assert(n1 === o1, 'Full Edit payload changed:\n' + n1.slice(0, 400) + '\n' + o1.slice(0, 400));
@@ -4104,7 +4032,1372 @@ const tests = [
             assert(real(pc.errors).length === 0 && real(ipad.errors).length === 0, 'page errors: ' + real(pc.errors).concat(real(ipad.errors)).join(' | '));
             await pc.context.close(); await ipad.context.close();
         }
+    },
+    {
+        name: "hub sync (i294): each student row carries the student's email; a student with none sends an empty one, and only active students are sent",
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            const ids = await seedFakeData(page);
+            await page.evaluate(async s => {
+                await db.students.update(s[1], { email: '  liam.fake@example.test  ' });
+                await db.students.update(s[2], { email: '' });
+                await db.students.update(s[3], { status: 'inactive' });
+            }, ids.studentIds);
+            const rows = await page.evaluate(async aid => (await hubSync.buildPayload(await db.activities.get(aid), 'test-token', { classroomDetails: true })).activities[0].students.map(r => [r.displayName, r.email]).sort((a, b) => a[0].localeCompare(b[0])), ids.activityId);
+            const want = [['Ada T.', 'ada@example.test'], ['Liam O.', 'liam.fake@example.test'], ['Maya S.', '']];
+            assert(JSON.stringify(rows) === JSON.stringify(want), 'student rows: ' + JSON.stringify(rows));
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: "certifications (i295): the Certify form's 'Passed on' date is kept (an earlier day stays that day), the save still stamps and uploads; a future day is refused",
+        fn: async ({ browser, base }) => {
+            const ls = { webhook_wildcat: 'https://script.google.com/macros/s/TEST/exec', webhook_token: 'test-token', 'drive-sync-enabled': 'true', 'drive-sync-password': 'test-sync-pass' };
+            const { page, errors, context } = await openApp(browser, base, { localStorageInit: ls });
+            const ids = await seedFakeData(page);
+            const toolId = await page.evaluate(() => db.inventory.add({ name: 'Fake Drill Press', category: 'tools', location: 'Fake bench', quantity: 1 }));
+            await page.evaluate(() => { window.__toasts = []; const orig = ui.showToast.bind(ui); ui.showToast = (m, ...rest) => { window.__toasts.push(String(m)); return orig(m, ...rest); }; router.navigate('skills'); });
+            await page.waitForTimeout(400);
+            const certify = (date, sid) => page.evaluate(async ({ date, sid, classId }) => {
+                await pages.skills.showCertifyModal();
+                const d = document.getElementById('certify-date');
+                const shown = d ? { value: d.value, max: d.max } : null;
+                if (d) d.value = date;
+                await pages.skills.loadCertifyStudents(classId);
+                document.querySelector(`.certify-student-cb[value="${sid}"]`).checked = true;
+                clearTimeout(driveSync._timer); driveSync._dirty = false;
+                await pages.skills.saveCertifications();
+                return { shown, dirty: driveSync._dirty, toast: window.__toasts.slice(-1)[0] };
+            }, { date, sid, classId: ids.classId });
+            const today = await page.evaluate(() => getTodayString());
+            // An earlier day
+            const r1 = await certify('2026-10-05', ids.studentIds[0]);
+            const c1 = await page.evaluate(sid => db.certifications.where('studentId').equals(sid).first(), ids.studentIds[0]);
+            assert(r1.shown && r1.shown.value === today && r1.shown.max === today, "the 'Passed on' field (default today, no later day): " + JSON.stringify(r1.shown));
+            assert(c1 && c1.toolId === toolId && formatDateLocal(c1.certifiedAt) === '2026-10-05', 'the saved certification: ' + JSON.stringify(c1));
+            assert(c1.createdAt && c1.updatedAt && r1.dirty === true, 'stamps and upload (7b): ' + JSON.stringify({ c1, dirty: r1.dirty }));
+            // A future day is refused, nothing saved
+            const r2 = await certify('2099-01-01', ids.studentIds[1]);
+            const n2 = await page.evaluate(sid => db.certifications.where('studentId').equals(sid).count(), ids.studentIds[1]);
+            assert(n2 === 0 && /can't be in the future/.test(r2.toast || ''), 'a future date: ' + JSON.stringify({ n2, toast: r2.toast }));
+            // Today keeps the moment of saving
+            const r3 = await certify(today, ids.studentIds[1]);
+            const c3 = await page.evaluate(sid => db.certifications.where('studentId').equals(sid).first(), ids.studentIds[1]);
+            assert(c3 && formatDateLocal(c3.certifiedAt) === today && Math.abs(Date.now() - new Date(c3.certifiedAt)) < 120000, 'today: ' + JSON.stringify(c3));
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'certifications (i295): with no tool chosen, Certify refuses with a message and saves nothing',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            const ids = await seedFakeData(page);
+            await page.evaluate(() => { window.__toasts = []; const orig = ui.showToast.bind(ui); ui.showToast = (m, ...rest) => { window.__toasts.push(String(m)); return orig(m, ...rest); }; router.navigate('skills'); });
+            await page.waitForTimeout(400);
+            // No tools in the inventory, so the tool list is empty
+            const r = await page.evaluate(async ({ sid, classId }) => {
+                await pages.skills.showCertifyModal();
+                await pages.skills.loadCertifyStudents(classId);
+                document.querySelector(`.certify-student-cb[value="${sid}"]`).checked = true;
+                await pages.skills.saveCertifications();
+                return { rows: await db.certifications.count(), toast: window.__toasts.slice(-1)[0], open: !document.getElementById('modal-certify').classList.contains('hidden') };
+            }, { sid: ids.studentIds[0], classId: ids.classId });
+            assert(r.rows === 0, r.rows + ' certification(s) saved with no tool');
+            assert(/Choose a tool/.test(r.toast || '') && r.open, 'the refusal: ' + JSON.stringify(r));
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'checkpoint ratings: only changes are written; no question about lower levels (i202 option 3); deselecting removes the rating (3-03, DL6)',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            const ids = await seedFakeData(page);
+            const r = await page.evaluate(async ({ classId, activityId, teamId, cp, s0, s1 }) => {
+                const P = pages.checkpoint;
+                const now = new Date().toISOString();
+                const skillId = await db.skills.add({ name: 'Fake Checkpoint Skill', category: 'Design', createdAt: now });
+                await db.checkpoints.update(cp, { skillsAssessable: [skillId] });
+                await db.skillLevels.add({ studentId: s0, skillId, level: 'Advanced', createdAt: now, updatedAt: now });
+                await db.skillLevels.add({ studentId: s1, skillId, level: 'Proficient', createdAt: now, updatedAt: now });
+                let asked = 0;
+                window.confirm = () => { asked++; return false; };
+                const open = async () => {
+                    P.reset();
+                    P.selectedClass = await db.classes.get(classId);
+                    await P.selectActivity(await db.activities.get(activityId));
+                    await P.selectTeam(await db.teams.get(teamId));
+                    await P.selectCheckpoint(await db.checkpoints.get(cp));
+                };
+                const obs = () => db.skillObservations.where('activityId').equals(activityId).toArray();
+                const out = {};
+                await open();
+                P.setSkillRating(s0, skillId, 'Proficient');
+                P.setSkillRating(s1, skillId, 'Beginning');
+                await P.saveProgress();
+                out.askedFirst = asked;
+                out.levelKept = (await db.skillLevels.where('studentId').equals(s0).first()).level;
+                out.s1Level = (await db.skillLevels.where('studentId').equals(s1).first()).level;
+                const before = (await obs()).map(o => o.updatedAt).join();
+                // Reopen and save without changes: nothing rewritten, nothing asked
+                await open();
+                await new Promise(res => setTimeout(res, 5));
+                asked = 0;
+                await P.saveProgress();
+                out.askedResave = asked;
+                out.rewritten = (await obs()).map(o => o.updatedAt).join() !== before;
+                // Deselect student 2's rating (tap it again) and save: it's removed
+                P.setSkillRating(s1, skillId, 'Beginning');
+                await P.saveProgress();
+                const all = await obs();
+                out.s1Live = all.filter(o => o.studentId === s1 && !o.deletedAt).length;
+                out.s1Deleted = all.filter(o => o.studentId === s1 && o.deletedAt).length;
+                await open();
+                out.shownAfterRemove = !!document.querySelector(`#skill-btn-${s1}-${skillId}-B.active`);
+                // Rating again adds a new row (a removed one isn't brought back)
+                P.setSkillRating(s1, skillId, 'Developing');
+                await P.saveProgress();
+                const again = (await obs()).filter(o => o.studentId === s1);
+                out.s1Rows = again.length;
+                out.s1LiveRating = again.filter(o => !o.deletedAt).map(o => o.rating).join();
+                // A removed rating that set the current level: the level stays, and she's told
+                const toasts = () => document.getElementById('toast-container').textContent;
+                // i202 option 3: student 2's lower rating set the level, so removing it above already said so
+                out.noticeBefore = /The level stays at Beginning; change it on the Skills page/.test(toasts());
+                P.setSkillRating(s0, skillId, 'Advanced');
+                await P.saveProgress();                       // sets student 1's level from this assignment
+                P.setSkillRating(s0, skillId, 'Advanced');    // tap again: removed
+                await P.saveProgress();
+                out.notice = /The level stays at Advanced; change it on the Skills page/.test(toasts());
+                out.levelAfter = (await db.skillLevels.where('studentId').equals(s0).first()).level;
+                return out;
+            }, { classId: ids.classId, activityId: ids.activityId, teamId: ids.teamId, cp: ids.checkpointIds[0], s0: ids.studentIds[0], s1: ids.studentIds[1] });
+            // i202 option 3: no question; each lowered level is the engine's level for the replayed ratings
+            // (one rating each here: Proficient and Beginning)
+            assert(r.askedFirst === 0 && r.levelKept === 'Proficient' && r.s1Level === 'Beginning', 'lower ratings: ' + JSON.stringify(r));
+            assert(r.askedResave === 0 && !r.rewritten, 'an unchanged save rewrote ratings: ' + JSON.stringify(r));
+            assert(r.s1Live === 0 && r.s1Deleted === 1 && !r.shownAfterRemove, 'deselect: ' + JSON.stringify(r));
+            assert(r.s1Rows === 2 && r.s1LiveRating === 'Developing', 'rating again: ' + JSON.stringify(r));
+            assert(r.noticeBefore && r.notice && r.levelAfter === 'Advanced', 'level-stays notice: ' + JSON.stringify(r));
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: "skill levels (i296, i202 option 3): on the checkpoint page a lower rating sets the engine's level for the replayed ratings, with no question",
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            const ids = await seedFakeData(page);
+            const r = await page.evaluate(async ({ classId, activityId, teamId, cp, s0 }) => {
+                const P = pages.checkpoint;
+                const t = '2026-09-01T13:00:00.000Z';
+                const skillId = await db.skills.add({ name: 'Fake Lowering Skill', category: 'Design', createdAt: t });
+                await db.checkpoints.update(cp, { skillsAssessable: [skillId] });
+                // Two earlier Advanced ratings, and the level they set
+                for (const day of ['2026-09-01', '2026-09-08']) await db.skillObservations.add({ studentId: s0, skillId, activityId, checkpointId: null, rating: 'Advanced', originalRating: 'Advanced', evidenceType: 'observation', createdAt: day + 'T13:00:00.000Z', updatedAt: day + 'T13:00:00.000Z' });
+                await db.skillLevels.add({ studentId: s0, skillId, level: 'Advanced', createdAt: t, updatedAt: t });
+                let asked = 0;
+                window.confirm = () => { asked++; return true; };
+                P.reset();
+                P.selectedClass = await db.classes.get(classId);
+                await P.selectActivity(await db.activities.get(activityId));
+                await P.selectTeam(await db.teams.get(teamId));
+                await P.selectCheckpoint(await db.checkpoints.get(cp));
+                P.setSkillRating(s0, skillId, 'Developing');
+                await P.saveProgress();
+                const engine = await masteryEngine.recomputeSkillScore(s0, skillId, classId);
+                return { asked, level: (await db.skillLevels.where('studentId').equals(s0).first()).level, engine: engine.level, score: engine.score };
+            }, { classId: ids.classId, activityId: ids.activityId, teamId: ids.teamId, cp: ids.checkpointIds[0], s0: ids.studentIds[0] });
+            // 100, 100, then Developing (70) weighted down: 0.40 × 70 + 0.60 × 100 = 88 → Proficient
+            assert(r.asked === 0, 'asked ' + r.asked + ' question(s)');
+            assert(r.engine === 'Proficient' && r.score === 88 && r.level === 'Proficient', 'level after a lower rating: ' + JSON.stringify(r));
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: "skill levels (i296, i202 option 3): in the assignment view a lower rating sets the engine's level for the replayed ratings, with no question",
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            const ids = await seedFakeData(page);
+            const r = await page.evaluate(async ({ classId, activityId, s0 }) => {
+                const t = '2026-09-01T13:00:00.000Z';
+                const skillId = await db.skills.add({ name: 'Fake Lowering Skill', category: 'Design', createdAt: t });
+                for (const day of ['2026-09-01', '2026-09-08']) await db.skillObservations.add({ studentId: s0, skillId, activityId, checkpointId: null, rating: 'Advanced', originalRating: 'Advanced', evidenceType: 'observation', createdAt: day + 'T13:00:00.000Z', updatedAt: day + 'T13:00:00.000Z' });
+                await db.skillLevels.add({ studentId: s0, skillId, level: 'Advanced', createdAt: t, updatedAt: t });
+                state.selectedActivity = activityId;
+                router.navigate('activity-detail');
+                await new Promise(res => setTimeout(res, 800));
+                // The view's rating controls for this student and skill, as the page draws them
+                const box = document.createElement('div');
+                box.innerHTML = `<button class="mastery-rating-btn selected" data-obs-group="${s0}-${skillId}" data-selected-level="Developing"></button>` +
+                    `<select id="obs-evidence-${s0}-${skillId}"><option value="observation" selected>Observation</option></select><input id="obs-note-${s0}-${skillId}" value="">`;
+                document.body.appendChild(box);
+                let asked = 0;
+                window.confirm = () => { asked++; return true; };
+                await pages.activityDetail.saveSkillObservation(activityId, s0, skillId);
+                box.remove();
+                const engine = await masteryEngine.recomputeSkillScore(s0, skillId, classId);
+                return { asked, level: (await db.skillLevels.where('studentId').equals(s0).first()).level, engine: engine.level, obs: await db.skillObservations.where('studentId').equals(s0).count() };
+            }, { classId: ids.classId, activityId: ids.activityId, s0: ids.studentIds[0] });
+            assert(r.obs === 3, 'the rating was not saved: ' + JSON.stringify(r));
+            assert(r.asked === 0, 'asked ' + r.asked + ' question(s)');
+            assert(r.engine === 'Proficient' && r.level === 'Proficient', 'level after a lower rating: ' + JSON.stringify(r));
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'skill levels (i296): a higher rating still raises the level to that rating (today\'s rule, not the engine\'s)',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            const ids = await seedFakeData(page);
+            const r = await page.evaluate(async ({ classId, activityId, teamId, cp, s0 }) => {
+                const P = pages.checkpoint;
+                const t = '2026-09-01T13:00:00.000Z';
+                const skillId = await db.skills.add({ name: 'Fake Raising Skill', category: 'Design', createdAt: t });
+                await db.checkpoints.update(cp, { skillsAssessable: [skillId] });
+                await db.skillObservations.add({ studentId: s0, skillId, activityId, checkpointId: null, rating: 'Developing', originalRating: 'Developing', evidenceType: 'observation', createdAt: t, updatedAt: t });
+                await db.skillLevels.add({ studentId: s0, skillId, level: 'Developing', createdAt: t, updatedAt: t });
+                P.reset();
+                P.selectedClass = await db.classes.get(classId);
+                await P.selectActivity(await db.activities.get(activityId));
+                await P.selectTeam(await db.teams.get(teamId));
+                await P.selectCheckpoint(await db.checkpoints.get(cp));
+                P.setSkillRating(s0, skillId, 'Advanced');
+                await P.saveProgress();
+                const engine = await masteryEngine.recomputeSkillScore(s0, skillId, classId);
+                return { level: (await db.skillLevels.where('studentId').equals(s0).first()).level, engine: engine.level };
+            }, { classId: ids.classId, activityId: ids.activityId, teamId: ids.teamId, cp: ids.checkpointIds[0], s0: ids.studentIds[0] });
+            // The engine would say Proficient (0.65 × 100 + 0.35 × 70 = 89.5); the stored level follows the rating
+            assert(r.engine === 'Proficient' && r.level === 'Advanced', 'a higher rating: ' + JSON.stringify(r));
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'auto-backups (i297): over the size cap the oldest snapshots go first, and the newest is always kept',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            await seedFakeData(page);
+            const r = await page.evaluate(async () => {
+                await backupDb.backups.clear();
+                const ids = [];
+                const save = async slot => { await autoBackup.save(slot); ids.push((await backupDb.backups.orderBy('createdAt').last()).id); };
+                await save('noon');
+                const one = (await backupDb.backups.get(ids[0])).data.length;
+                // Room for two and a half fake snapshots: after five saves, the newest two are left
+                autoBackup.MAX_TOTAL_CHARS = Math.floor(one * 2.5);
+                for (const slot of ['four', 'noon', 'four', 'noon']) { await new Promise(res => setTimeout(res, 5)); await save(slot); }
+                const left = (await backupDb.backups.orderBy('createdAt').toArray()).map(b => ({ id: b.id, size: b.size }));
+                // A cap smaller than one snapshot still keeps the newest
+                autoBackup.MAX_TOTAL_CHARS = 10;
+                await new Promise(res => setTimeout(res, 5));
+                await save('four');
+                const tiny = (await backupDb.backups.toArray()).map(b => b.id);
+                // A safety snapshot (before a restore) is never the one removed
+                await new Promise(res => setTimeout(res, 5));
+                const safetyId = await autoBackup.saveSafety('Fake safety');
+                const afterSafety = (await backupDb.backups.toArray()).map(b => b.id);
+                return { one, ids, left, tiny, safetyId, afterSafety };
+            });
+            assert(JSON.stringify(r.left.map(b => b.id)) === JSON.stringify(r.ids.slice(3, 5)), 'left after five saves: ' + JSON.stringify(r));
+            assert(r.left.every(b => b.size === r.one), 'each snapshot records its size: ' + JSON.stringify(r.left));
+            assert(JSON.stringify(r.tiny) === JSON.stringify([r.ids[5]]), 'with a tiny cap: ' + JSON.stringify(r));
+            assert(r.safetyId && JSON.stringify(r.afterSafety) === JSON.stringify([r.safetyId]), 'the safety snapshot: ' + JSON.stringify(r));
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'auto-backups (i297): the count cap still holds (14), and the size cap is 200 MB of snapshot text',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            const r = await page.evaluate(async () => {
+                await backupDb.backups.clear();
+                for (let i = 0; i < 16; i++) { await autoBackup.save(i % 2 ? 'noon' : 'four'); await new Promise(res => setTimeout(res, 3)); }
+                return { count: await backupDb.backups.count(), max: autoBackup.MAX_BACKUPS, cap: autoBackup.MAX_TOTAL_CHARS };
+            });
+            assert(r.count === 14 && r.max === 14, 'count cap: ' + JSON.stringify(r));
+            assert(r.cap === 200 * 1024 * 1024, 'size cap: ' + JSON.stringify(r));
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'import (i298): the preview warns that Merge is only safe between devices that were in sync; pressing Merge asks first, and Cancel changes nothing',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            await seedFakeData(page);
+            const before = await page.evaluate(async () => ({ students: await db.students.count(), backups: await backupDb.backups.count() }));
+            await page.evaluate(() => { window.__asked = []; window.confirm = m => { window.__asked.push(String(m)); return false; }; router.navigate('settings'); });
+            await page.setInputFiles('#import-file-input', new URL('./fixtures/fake-roster.json', import.meta.url).pathname);
+            await page.waitForSelector('#import-merge-btn', { state: 'visible' });
+            const shown = await page.evaluate(() => { const w = document.getElementById('import-merge-warning'); return w ? w.textContent : null; });
+            assert(shown && /in sync/.test(shown) && /Replace All is the safe choice/.test(shown), 'the preview\'s Merge warning: ' + shown);
+            assert(!(await page.$eval('#import-merge-btn', b => b.disabled)), 'Merge is switched off for this file');
+            // Cancel: the preview stays open and nothing is imported or snapshotted
+            await page.click('#import-merge-btn');
+            await page.waitForTimeout(400);
+            const r = await page.evaluate(async () => ({ asked: window.__asked, open: !document.getElementById('modal-import-preview').classList.contains('hidden'), students: await db.students.count(), backups: await backupDb.backups.count() }));
+            assert(r.asked.length === 1 && /Replace All is the safe choice/.test(r.asked[0]), 'the question: ' + JSON.stringify(r.asked));
+            assert(r.open && r.students === before.students && r.backups === before.backups, 'Cancel changed something: ' + JSON.stringify({ before, r }));
+            // OK: the merge goes ahead
+            await page.evaluate(() => { window.confirm = () => true; });
+            await page.click('#import-merge-btn');
+            for (let i = 0; i < 50 && (await page.evaluate(() => backupDb.backups.count())) < before.backups + 1; i++) await page.waitForTimeout(200);
+            const label = await page.evaluate(() => backupDb.backups.orderBy('createdAt').last().then(b => b.label));
+            assert(/Before import \(Merge\)/.test(label), 'after OK, the merge did not run: ' + label);
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'export ratings (i299): the CSV button gives the offline page\'s rows (renamed and merged skills, removed ratings and students left out), saved to this device only',
+        fn: async ({ browser, base }) => {
+            const stub = new WebhookStub();
+            const ls = { webhook_wildcat: 'https://script.google.com/macros/s/TEST/exec', webhook_token: 'test-token', 'drive-sync-enabled': 'true', 'drive-sync-password': 'test-sync-pass' };
+            const { page, errors, context } = await openApp(browser, base, { stub, localStorageInit: ls });
+            const ids = await seedFakeData(page);
+            await page.evaluate(async ({ s }) => {
+                const t = '2026-08-01T12:00:00.000Z';
+                const renamed = await db.skills.add({ name: 'Fake Measuring', previousName: 'Fake Measure', category: 'Design', createdAt: t });
+                const mergedAway = await db.skills.add({ name: 'Fake Old Saw', category: 'Design', retired: true, createdAt: t });
+                const target = await db.skills.add({ name: 'Fake Cutting', category: 'Design', createdAt: t });
+                await db.students.update(s[1], { deletedAt: '2026-10-02T12:00:00.000Z', status: 'deleted' });
+                const o = (sid, skillId, rating, createdAt, extra = {}) => db.skillObservations.add({ studentId: sid, skillId, rating, evidenceType: 'observation', createdAt, updatedAt: createdAt, ...extra });
+                await o(s[0], renamed, 'Proficient', '2026-09-10T14:00:00.000Z');
+                await o(s[0], target, 'Developing', '2026-10-01T14:00:00.000Z', { premigrationSkillId: mergedAway, premigrationCreatedAt: '2026-08-28T14:00:00.000Z' });
+                await o(s[0], renamed, 'Advanced', '2026-09-11T14:00:00.000Z', { deletedAt: '2026-09-12T14:00:00.000Z' });   // removed rating
+                await o(s[1], renamed, 'Beginning', '2026-09-10T14:00:00.000Z');                                                // removed student
+                await o(s[0], target, 'Developing', '2026-10-01T14:00:00.000Z', { evidenceType: 'migrated' });                  // placeholder
+                await o(99999, renamed, 'Beginning', '2026-09-10T14:00:00.000Z');                                               // student not found
+            }, { s: ids.studentIds });
+            const callsBefore = stub.calls.length;
+            await page.evaluate(() => { router.navigate('settings'); clearTimeout(driveSync._timer); driveSync._dirty = false; window.__seq = driveSync._changeSeq; });
+            await page.waitForTimeout(300);
+            await page.click('button.tab-btn:has-text("Data")');   // Settings → Data
+            await page.click('#ratings-export-btn');
+            await page.waitForSelector('#modal-ratings-export:not(.hidden)');
+            const make = async (o) => {
+                await page.selectOption('#ratings-export-name', o.name);
+                await page.selectOption('#ratings-export-skill', o.skill);
+                await page.fill('#ratings-export-from', o.from || '');
+                await page.selectOption('#ratings-export-rating', o.rating);
+                await page.evaluate(() => { document.getElementById('ratings-export-status').textContent = ''; });
+                await page.click('#ratings-export-make');
+                await page.waitForFunction(() => /^(Done\.|No ratings matched\.|Could not)/.test(document.getElementById('ratings-export-status').textContent));
+                return page.evaluate(() => ({ rows: ratingsExport._rows, out: document.getElementById('ratings-export-out').textContent }));
+            };
+            // The names on her sheet now: old skill names and the ratings' original dates
+            const a = await make({ name: 'first-last', skill: 'old', rating: 'letter' });
+            assert(JSON.stringify(a.rows) === JSON.stringify([['Ada Tester', 'Fake Old Saw', '2026-08-28', 'D'], ['Ada Tester', 'Fake Measure', '2026-09-10', 'P']]), 'old names: ' + JSON.stringify(a.rows));
+            assert(/Rows made: 2 \(all ratings\)/.test(a.out) && /removed ratings: 1/.test(a.out) && /ratings of removed students: 1/.test(a.out) && /migration placeholders .*: 1/.test(a.out) && /student or skill not found: 1/.test(a.out), 'summary: ' + a.out);
+            // ShopFlow's names now, whole words, Last, First
+            const b = await make({ name: 'last-first', skill: 'current', rating: 'word' });
+            assert(JSON.stringify(b.rows) === JSON.stringify([['Tester, Ada', 'Fake Measuring', '2026-09-10', 'Proficient'], ['Tester, Ada', 'Fake Cutting', '2026-10-01', 'Developing']]), 'current names: ' + JSON.stringify(b.rows));
+            // From a date
+            const c = await make({ name: 'first-last', skill: 'old', rating: 'letter', from: '2026-09-01' });
+            assert(c.rows.length === 1 && c.rows[0][1] === 'Fake Measure' && /before 2026-09-01: 1/.test(c.out), 'from-date: ' + JSON.stringify(c));
+            // The file: header, the page's cells, saved to this device
+            const [download] = await Promise.all([page.waitForEvent('download'), page.click('#ratings-export-actions button:first-child')]);
+            const text = fs.readFileSync(await download.path(), 'utf8');
+            assert(download.suggestedFilename() === `shopflow-skill-ratings-${await page.evaluate(() => getTodayString())}.csv`, 'file name: ' + download.suggestedFilename());
+            assert(text === '﻿Student,Skill,Date,Rating\r\nAda Tester,Fake Measure,2026-09-10,P', 'file: ' + JSON.stringify(text));
+            // Nothing synced, uploaded or sent
+            const after = await page.evaluate(() => ({ dirty: driveSync._dirty, seqSame: driveSync._changeSeq === window.__seq }));
+            assert(!after.dirty && after.seqSame && stub.calls.length === callsBefore, 'the export wrote or sent something: ' + JSON.stringify({ after, calls: stub.calls.slice(callsBefore).map(c => c.action) }));
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: "inventory (i300): 'Update existing equipment' previews counts first, then updates in one go; names and categories never change; items not in the file are left alone",
+        fn: async ({ browser, base }) => {
+            const ls = { webhook_wildcat: 'https://script.google.com/macros/s/TEST/exec', webhook_token: 'test-token', 'drive-sync-enabled': 'true', 'drive-sync-password': 'test-sync-pass' };
+            const { page, errors, context } = await openApp(browser, base, { localStorageInit: ls });
+            const ids = await page.evaluate(async () => {
+                const t = '2026-09-01T12:00:00.000Z';
+                const add = o => db.inventory.add({ threshold: 0, location: '', notes: '', createdAt: t, updatedAt: t, ...o });
+                return {
+                    hammer: await add({ name: 'Fake Hammer', category: 'tools', quantity: 3, location: 'Bin A' }),
+                    tape: await add({ name: 'Fake Tape', category: 'materials', quantity: 10, threshold: 2 }),
+                    glue: await add({ name: 'Fake Glue', category: 'materials', quantity: 1 }),
+                    saw1: await add({ name: 'Fake Saw', category: 'tools', quantity: 1 }),
+                    saw2: await add({ name: 'fake saw ', category: 'tools', quantity: 1 }),
+                    clamp: await add({ name: 'Fake Clamp', category: 'tools', quantity: 6 })
+                };
+            });
+            const csv = [
+                'item,category,shopflow_category,consumable,quantity,unit,location,source,reorder_at,notes',
+                ' FAKE HAMMER ,Hand tools,tools,no,5,each,"Shelf 2, left",count,,',
+                'Fake Tape,Supplies,safety,yes,10,rolls,,count,4,"Blue ""painter"" tape"',
+                'Fake Glue,,materials,,,,,,,',
+                'Fake Saw,,tools,no,2,,,,,',
+                'Fake Wire,,electronics,yes,30,ft,Bin 4,count,10,',
+                'Fake Nut,,materials,yes,100,each,,,,',
+                'fake nut,,materials,yes,90,each,,,,',
+                'Fake Bad,,tools,,lots,,,,,'
+            ].join('\r\n') + '\r\n';
+            const file = path.join(os.tmpdir(), `shopflow-test-${process.pid}-room-count.csv`);
+            fs.writeFileSync(file, '﻿' + csv);
+            const before = await page.evaluate(() => db.inventory.toArray());
+            await page.evaluate(() => { router.navigate('settings'); clearTimeout(driveSync._timer); driveSync._dirty = false; });
+            await page.setInputFiles('#update-equipment-file', file);
+            await page.waitForSelector('#modal-equipment-update:not(.hidden)');
+            const preview = await page.evaluate(() => ({
+                counts: document.getElementById('equipment-update-counts').textContent.replace(/\s+/g, ' ').trim(),
+                updates: [...document.querySelectorAll('#equipment-update-list li')].map(li => li.textContent),
+                adds: [...document.querySelectorAll('#equipment-add-list li')].map(li => li.textContent),
+                dups: [...document.querySelectorAll('#equipment-dup-list li')].map(li => li.textContent),
+                cats: [...document.querySelectorAll('#equipment-category-list li')].map(li => li.textContent),
+                problems: [...document.querySelectorAll('#equipment-problem-list li')].map(li => li.textContent)
+            }));
+            assert(preview.counts === '2 will update · 1 will add · 1 unchanged · 2 duplicate names (not changed) · 1 in ShopFlow but not in the file (left alone)', 'counts: ' + preview.counts);
+            assert(preview.updates.length === 2 && /Fake Hammer: quantity 3 → 5; unit \(blank\) → each; consumable \(blank\) → no; location Bin A → Shelf 2, left/.test(preview.updates[0]), 'updates: ' + JSON.stringify(preview.updates));
+            assert(/Fake Tape: low-stock threshold 2 → 4; unit \(blank\) → rolls; consumable \(blank\) → yes; notes \(blank\) → Blue "painter" tape$/.test(preview.updates[1]), 'tape: ' + preview.updates[1]);
+            assert(JSON.stringify(preview.adds) === JSON.stringify(['Fake Wire (electronics, 30 ft)']), 'adds: ' + JSON.stringify(preview.adds));
+            assert(preview.dups.length === 2 && /Fake Saw \(1 in the file, 2 in ShopFlow\)/.test(preview.dups[0]) && /Fake Nut \(2 in the file, 0 in ShopFlow\)/.test(preview.dups[1]), 'duplicates: ' + JSON.stringify(preview.dups));
+            assert(preview.cats.length === 1 && /Fake Tape: ShopFlow "materials", file "safety" \(category differs, not changed\)/.test(preview.cats[0]), 'category: ' + JSON.stringify(preview.cats));
+            assert(preview.problems.length === 1 && /Row 9 \(Fake Bad\): quantity is not a number/.test(preview.problems[0]), 'problems: ' + JSON.stringify(preview.problems));
+            // Nothing written by the preview
+            assert(JSON.stringify(await page.evaluate(() => db.inventory.toArray())) === JSON.stringify(before), 'the preview changed the inventory');
+            // Apply
+            await page.click('#equipment-update-apply');
+            await page.waitForSelector('#modal-equipment-update', { state: 'hidden' });
+            const after = await page.evaluate(async () => ({ items: await db.inventory.toArray(), dirty: driveSync._dirty, snap: (await backupDb.backups.orderBy('createdAt').last()).label }));
+            const by = id => after.items.find(i => i.id === id);
+            const hammer = by(ids.hammer), tape = by(ids.tape), wire = after.items.find(i => i.name === 'Fake Wire');
+            assert(hammer.name === 'Fake Hammer' && hammer.category === 'tools' && hammer.quantity === 5 && hammer.unit === 'each' && hammer.consumable === false && hammer.location === 'Shelf 2, left', 'hammer: ' + JSON.stringify(hammer));
+            assert(tape.category === 'materials' && tape.threshold === 4 && tape.quantity === 10 && tape.consumable === true && tape.notes === 'Blue "painter" tape', 'tape: ' + JSON.stringify(tape));
+            assert(wire && wire.category === 'electronics' && wire.quantity === 30 && wire.threshold === 10 && wire.unit === 'ft' && wire.location === 'Bin 4' && wire.consumable === true, 'wire: ' + JSON.stringify(wire));
+            for (const k of ['glue', 'saw1', 'saw2', 'clamp']) assert(JSON.stringify(by(ids[k])) === JSON.stringify(before.find(i => i.id === ids[k])), k + ' changed: ' + JSON.stringify(by(ids[k])));
+            assert(after.items.length === before.length + 1, 'item count: ' + after.items.length);
+            assert(after.dirty === true && /Before equipment update/.test(after.snap), 'sync and snapshot: ' + JSON.stringify({ dirty: after.dirty, snap: after.snap }));
+            // The inventory page shows the unit and the consumable mark
+            await page.evaluate(() => router.navigate('inventory'));
+            await page.waitForTimeout(500);
+            const card = await page.evaluate(() => [...document.querySelectorAll('.card')].map(c => c.textContent.replace(/\s+/g, ' ')).find(t => t.includes('Fake Tape')) || '');
+            assert(/Total Quantity: 10 rolls Consumable/.test(card), 'inventory card: ' + card);
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: "inventory (i300): a JSON file works too; Cancel changes nothing; a failure part-way through changes nothing (one transaction)",
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            await page.evaluate(() => db.inventory.add({ name: 'Fake Drill', category: 'tools', quantity: 2, threshold: 0, location: 'Bin C', createdAt: '2026-09-01T12:00:00.000Z' }));
+            const file = tempJson('room-count', [{ item: 'Fake Drill', quantity: 4, reorder_at: 1 }, { item: 'Fake Bit Set', shopflow_category: 'tools', quantity: 3 }]);
+            const before = await page.evaluate(() => db.inventory.toArray());
+            await page.evaluate(() => router.navigate('settings'));
+            // Cancel
+            await page.setInputFiles('#update-equipment-file', file);
+            await page.waitForSelector('#modal-equipment-update:not(.hidden)');
+            const counts = await page.textContent('#equipment-update-counts');
+            assert(/1 will update · 1 will add · 0 unchanged/.test(counts.replace(/\s+/g, ' ')), 'JSON counts: ' + counts);
+            await page.click('#modal-equipment-update .modal__footer .btn--secondary');
+            await page.waitForTimeout(300);
+            assert(JSON.stringify(await page.evaluate(() => db.inventory.toArray())) === JSON.stringify(before), 'Cancel changed the inventory');
+            // A failure on the add, after the update was written: everything is rolled back
+            await page.setInputFiles('#update-equipment-file', file);
+            await page.waitForSelector('#modal-equipment-update:not(.hidden)');
+            await page.evaluate(() => { window.__toasts = []; const orig = ui.showToast.bind(ui); ui.showToast = (m, ...rest) => { window.__toasts.push(String(m)); return orig(m, ...rest); }; db.inventory.add = () => Promise.reject(new Error('fake write failure')); });
+            await page.evaluate(() => pages.settings.applyEquipmentUpdate());
+            const r = await page.evaluate(async () => ({ items: await db.inventory.toArray(), toast: window.__toasts.slice(-1)[0] }));
+            assert(JSON.stringify(r.items) === JSON.stringify(before), 'a failed update left changes behind: ' + JSON.stringify(r.items));
+            assert(/failed, so nothing was changed/.test(r.toast || ''), 'the failure message: ' + r.toast);
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'notify teachers: the first press emails everyone; a second press emails only the new student, with a short follow-up to their teacher; nothing new sends nothing (i314)',
+        fn: async ({ browser, base }) => {
+            const ls = { 'automations-enabled': 'true', webhook_wildcat: 'https://script.google.com/macros/s/TEST/exec', webhook_token: 'test-token' };
+            const { page, errors, context, stub } = await openApp(browser, base, { localStorageInit: ls });
+            const { studentIds: s } = await seedFakeData(page);
+            // Ada, Liam: teacher@example.test; Maya: teacher2@example.test; Noah (teacher@example.test) drops in later
+            const addDropIns = ids => page.evaluate(async ids => {
+                for (const id of ids) await db.attendance.add({ studentId: String(id), date: getTodayString(), period: 'wildcat', status: 'unmarked', createdAt: new Date().toISOString() });
+            }, ids);
+            await page.evaluate(async s => { await db.students.update(s[2], { wildcatTeacher: 'Teacher Two', wildcatTeacherEmail: 'teacher2@example.test' }); }, s);
+            const press = () => page.evaluate(async () => {
+                let asked = null; const toasts = [];
+                window.confirm = m => { asked = m; return true; };
+                const show = ui.showToast; ui.showToast = (m, t) => { toasts.push(m); return show.call(ui, m, t); };
+                await pages.dashboard.sendRosterNotifications();
+                for (let i = 0; i < 50 && /Sending/.test(document.getElementById('btn-send-roster-emails').textContent); i++) await new Promise(r => setTimeout(r, 100));
+                await new Promise(r => setTimeout(r, 200));
+                ui.showToast = show;
+                return { asked, toasts };
+            });
+            const sends = () => stub.callsFor('send_roster_notifications');
+            const shape = call => call.body.groups.map(g => `${g.teacherEmail}:${g.students.map(x => x.name).join('+')}${g.followUp ? ':follow-up' : ''}`).sort();
+            await addDropIns([s[0], s[1], s[2]]);
+            await page.evaluate(() => router.navigate('dashboard'));
+            await page.waitForTimeout(400);
+
+            // First press: everyone
+            const first = await press();
+            assert(sends().length === 1, `first press: expected 1 send, got ${sends().length}`);
+            assert(JSON.stringify(shape(sends()[0])) === JSON.stringify(['teacher2@example.test:Maya Sample', "teacher@example.test:Ada Tester+Liam O'Brien"].sort()), 'first press groups: ' + JSON.stringify(shape(sends()[0])));
+
+            // Noah drops in; second press: only Noah, and his teacher gets a short follow-up naming only him
+            await addDropIns([s[3]]);
+            const second = await press();
+            assert(sends().length === 2, `second press: expected 2 sends in all, got ${sends().length}`);
+            assert(JSON.stringify(shape(sends()[1])) === JSON.stringify(['teacher@example.test:Noah Fixture:follow-up']), 'second press groups: ' + JSON.stringify(shape(sends()[1])));
+            const studentEmails = sends()[1].body.groups.flatMap(g => g.students.map(x => x.email));
+            assert(JSON.stringify(studentEmails) === JSON.stringify(['noah@example.test']), 'second press student emails: ' + JSON.stringify(studentEmails));
+            assert(/1 new student\(s\)\. 1 teacher\(s\) will get an email \(1 of them a short follow-up\)/.test(second.asked || '') && /3 student\(s\) on today's list were already emailed/.test(second.asked || ''), 'second confirm: ' + second.asked);
+            assert(!/Ada|Liam|Maya/.test(second.asked || ''), 'second confirm lists already-emailed students: ' + second.asked);
+            assert(/3 new student\(s\)\. 2 teacher\(s\) will get an email\./.test(first.asked || ''), 'first confirm: ' + first.asked);
+
+            // Third press, nothing new: no send, no confirm
+            const third = await press();
+            assert(sends().length === 2, `third press sent again: ${sends().length} sends`);
+            assert(third.asked === null && third.toasts.some(t => /already emailed today/.test(t)), 'third press: ' + JSON.stringify(third));
+
+            // The day's record: one settings row, ids only
+            const rec = await page.evaluate(() => db.settings.get('wildcat-notified-' + getTodayString()));
+            assert(rec && JSON.stringify(rec.value.studentIds) === JSON.stringify(s.map(String).sort()) && rec.updatedAt, 'record: ' + JSON.stringify(rec));
+            assert(!/example\.test|Ada|Liam|Maya|Noah/.test(JSON.stringify(rec)), 'the record holds names or emails: ' + JSON.stringify(rec));
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'notify teachers: a send recorded on one device is honored on the other, and both devices\' records join on sync (i314)',
+        fn: async ({ browser, base }) => {
+            const stub = new WebhookStub();
+            const ls = { 'automations-enabled': 'true', webhook_wildcat: 'https://script.google.com/macros/s/TEST/exec', webhook_token: 'test-token' };
+            const A = await openApp(browser, base, { stub, localStorageInit: ls });
+            const { studentIds: s } = await seedFakeData(A.page);
+            const B = await openApp(browser, base, { stub, localStorageInit: ls });
+            const file = page => page.evaluate(async () => JSON.parse(JSON.stringify(await driveSync.buildSyncFile())));
+            const load = (page, f) => page.evaluate(async f => {   // B starts as an exact copy of A
+                await db.transaction('rw', db.tables, async () => {
+                    for (const t of db.tables) { await t.clear(); if (Array.isArray(f[t.name]) && f[t.name].length) await t.bulkAdd(f[t.name]); }
+                });
+            }, f);
+            const pull = (page, f) => page.evaluate(f => driveSync.applyPulledData(f, new Date().toISOString()), f);
+            const addDropIns = (page, ids) => page.evaluate(async ids => {
+                for (const id of ids) await db.attendance.add({ studentId: String(id), date: getTodayString(), period: 'wildcat', status: 'unmarked', createdAt: new Date().toISOString() });
+            }, ids);
+            const press = page => page.evaluate(async () => {
+                window.confirm = () => true;
+                await pages.dashboard.sendRosterNotifications();
+                for (let i = 0; i < 50 && /Sending/.test(document.getElementById('btn-send-roster-emails').textContent); i++) await new Promise(r => setTimeout(r, 100));
+                await new Promise(r => setTimeout(r, 200));
+            });
+            const names = call => call.body.groups.flatMap(g => g.students.map(x => x.name)).sort();
+            const sends = () => stub.callsFor('send_roster_notifications');
+            const record = page => page.evaluate(() => db.settings.get('wildcat-notified-' + getTodayString()).then(r => r ? r.value.studentIds : []));
+            await load(B.page, await file(A.page));
+            for (const p of [A.page, B.page]) { await p.evaluate(() => router.navigate('dashboard')); await p.waitForTimeout(300); }
+
+            // A (the PC) emails Ada and Liam; B (the iPad) syncs, then Noah drops in on B
+            await addDropIns(A.page, [s[0], s[1]]);
+            await press(A.page);
+            assert(sends().length === 1 && JSON.stringify(names(sends()[0])) === JSON.stringify(['Ada Tester', "Liam O'Brien"]), 'A first send: ' + JSON.stringify(sends().map(names)));
+            await pull(B.page, await file(A.page));
+            await addDropIns(B.page, [s[0], s[1], s[3]]);
+            await press(B.page);
+            assert(sends().length === 2, `B: expected one more send, got ${sends().length - 1}`);
+            assert(JSON.stringify(names(sends()[1])) === JSON.stringify(['Noah Fixture']) && sends()[1].body.groups[0].followUp === true, 'B sent: ' + JSON.stringify(sends()[1].body.groups.map(g => ({ n: g.students.map(x => x.name), f: g.followUp }))));
+
+            // Meanwhile A, before pulling B, emails Maya. Each pull joins the lists; neither loses an id
+            await addDropIns(A.page, [s[2]]);
+            await press(A.page);
+            assert(sends().length === 3 && JSON.stringify(names(sends()[2])) === JSON.stringify(['Maya Sample']), 'A second send: ' + JSON.stringify(names(sends()[2])));
+            await pull(A.page, await file(B.page));
+            await pull(B.page, await file(A.page));
+            const all = s.map(String).sort();
+            const [rA, rB] = [await record(A.page), await record(B.page)];
+            assert(JSON.stringify(rA) === JSON.stringify(all) && JSON.stringify(rB) === JSON.stringify(all), 'records after sync: ' + JSON.stringify({ rA, rB }));
+            const rows = await A.page.evaluate(() => db.settings.toArray().then(r => r.filter(x => x.key.startsWith('wildcat-notified-')).length));
+            assert(rows === 1, `one record per day expected, A has ${rows}`);
+
+            // Everyone is on both devices now: a press on either sends nothing
+            await addDropIns(A.page, [s[3]]); await addDropIns(B.page, [s[2]]);
+            await press(A.page); await press(B.page);
+            assert(sends().length === 3, `a press after the sync sent again: ${sends().length - 3} extra send(s)`);
+            assert(real(A.errors).length === 0 && real(B.errors).length === 0, 'page errors: ' + real(A.errors).concat(real(B.errors)).join(' | '));
+            await A.context.close(); await B.context.close();
+        }
+    },
+    {
+        name: 'notify teachers: a failed or unanswered send is not recorded as sent, so the next press sends it (i314)',
+        fn: async ({ browser, base }) => {
+            const ls = { 'automations-enabled': 'true', webhook_wildcat: 'https://script.google.com/macros/s/TEST/exec', webhook_token: 'test-token' };
+            const { page, errors, context, stub } = await openApp(browser, base, { localStorageInit: ls });
+            const { studentIds: s } = await seedFakeData(page);
+            await page.evaluate(async s => {
+                for (const id of [s[0], s[1]]) await db.attendance.add({ studentId: String(id), date: getTodayString(), period: 'wildcat', status: 'unmarked', createdAt: new Date().toISOString() });
+                router.navigate('dashboard');
+            }, s);
+            await page.waitForTimeout(400);
+            const press = () => page.evaluate(async () => {
+                window.confirm = () => true;
+                await pages.dashboard.sendRosterNotifications();
+                for (let i = 0; i < 80 && /Sending/.test(document.getElementById('btn-send-roster-emails').textContent); i++) await new Promise(r => setTimeout(r, 100));
+                await new Promise(r => setTimeout(r, 200));
+            });
+            const record = () => page.evaluate(() => db.settings.get('wildcat-notified-' + getTodayString()).then(r => r ? r.value.studentIds : []));
+            const sends = () => stub.callsFor('send_roster_notifications');
+            const count = call => call.body.groups.reduce((n, g) => n + g.students.length, 0);
+            // The script answers with an error, then the reply is lost: nothing recorded either time
+            stub.sequence('send_roster_notifications', [{ status: 'error', message: 'Fake failure' }, { raw: '<html>lost</html>' }]);
+            await press();
+            assert(sends().length === 1 && JSON.stringify(await record()) === '[]', 'a failed send was recorded: ' + JSON.stringify(await record()));
+            await press();
+            assert(sends().length === 2 && count(sends()[1]) === 2 && JSON.stringify(await record()) === '[]', 'a lost reply was recorded, or the retry did not send both: ' + JSON.stringify(await record()));
+            // Now it goes through: both students sent and recorded; one more press sends nothing
+            await press();
+            assert(sends().length === 3 && count(sends()[2]) === 2, 'the press after a failure did not send both students');
+            assert(JSON.stringify(await record()) === JSON.stringify([s[0], s[1]].map(String).sort()), 'a good send was not recorded: ' + JSON.stringify(await record()));
+            await press();
+            assert(sends().length === 3, 'a press after a good send sent again');
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'notify teachers: if noting who was emailed fails after the script answered success, the toast says the emails went out, not "Failed to send" (i314)',
+        fn: async ({ browser, base }) => {
+            const ls = { 'automations-enabled': 'true', webhook_wildcat: 'https://script.google.com/macros/s/TEST/exec', webhook_token: 'test-token' };
+            const { page, errors, context, stub } = await openApp(browser, base, { localStorageInit: ls });
+            const { studentIds: s } = await seedFakeData(page);
+            await page.evaluate(async s => {
+                for (const id of [s[0], s[1]]) await db.attendance.add({ studentId: String(id), date: getTodayString(), period: 'wildcat', status: 'unmarked', createdAt: new Date().toISOString() });
+                router.navigate('dashboard');
+            }, s);
+            await page.waitForTimeout(400);
+            const toasts = await page.evaluate(async () => {
+                window.__toasts = [];
+                const orig = ui.showToast.bind(ui);
+                ui.showToast = (m, type, ...r) => { window.__toasts.push(type + ': ' + String(m)); return orig(m, type, ...r); };
+                rosterNotified.add = async () => { throw new Error('Fake storage failure'); };
+                window.confirm = () => true;
+                await pages.dashboard.sendRosterNotifications();
+                for (let i = 0; i < 80 && /Sending/.test(document.getElementById('btn-send-roster-emails').textContent); i++) await new Promise(r => setTimeout(r, 100));
+                await new Promise(r => setTimeout(r, 200));
+                return window.__toasts.slice();
+            });
+            assert(stub.callsFor('send_roster_notifications').length === 1, 'no send, or more than one');
+            assert(!toasts.some(t => /Failed to send/.test(t)), 'said "Failed to send" though the script answered success: ' + toasts.join(' | '));
+            assert(toasts.some(t => /^warning: ✅ Wildcat emails: .* But this device could not note who was emailed\./.test(t)), 'no "sent, but not noted" warning: ' + toasts.join(' | '));
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'contract import: a shorter checkpoints list is refused when a checkpoint it would delete has completions; nothing is written (i313)',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            const ids = await seedFakeData(page);
+            const r = await i313Reimport(page, ids.studentIds, { Finish: 2 }, [i313Cp(1, 'Plan'), i313Cp(2, 'Cut'), i313Cp(3, 'Sand')]);
+            assert(r.shown.length === 1 && r.shown[0] === 'Checkpoint 4 ("Finish") has 2 completion records, but the new "checkpoints" list has only 3. Re-importing E9-FAKE-313 would delete checkpoint 4 and its completion records. Keep it in the list, in the same place.', 'refusal: ' + JSON.stringify(r.shown));
+            assert(JSON.stringify(r.after) === JSON.stringify(r.before) && r.log[1] === r.log[0], 'something changed: ' + JSON.stringify({ before: r.before, after: r.after }));
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'contract import: a shorter checkpoints list that only drops checkpoints with no completions still imports (i313)',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            const ids = await seedFakeData(page);
+            const r = await i313Reimport(page, ids.studentIds, { Plan: 2, Sand: 1 }, [i313Cp(1, 'Plan'), i313Cp(2, 'Cut'), i313Cp(3, 'Sand')]);
+            assert(r.shown.length === 0, 'refused: ' + JSON.stringify(r.shown));
+            assert(JSON.stringify(r.after.cps.map(c => [c.title, c.description])) === JSON.stringify([['Plan', 'Fake v2 Plan'], ['Cut', 'Fake v2 Cut'], ['Sand', 'Fake v2 Sand']]), 'checkpoints: ' + JSON.stringify(r.after.cps));
+            assert(JSON.stringify(r.after.comps) === JSON.stringify(r.before.comps), 'completions moved or lost: ' + JSON.stringify({ before: r.before.comps, after: r.after.comps }));
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'contract import: removing a checkpoint from the middle is refused when a later one has completions (i313)',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            const ids = await seedFakeData(page);
+            const r = await i313Reimport(page, ids.studentIds, { Plan: 1, Sand: 1 }, [i313Cp(1, 'Plan'), i313Cp(2, 'Sand'), i313Cp(3, 'Finish')]);
+            assert(r.shown.length === 1 && r.shown[0] === 'Checkpoint 3 ("Sand") has 1 completion record, but the guide\'s checkpoint 3 is "Finish". Checkpoints are matched by position, so those completion records would move to "Finish". A checkpoint was likely removed, inserted or moved in the list: keep each checkpoint that has completion records in its old place, and add new ones at the end. Rewriting a checkpoint\'s wording under the same title is still allowed. (No checkpoint id is stored for it, so only the titles were compared.)', 'refusal: ' + JSON.stringify(r.shown));
+            assert(JSON.stringify(r.after) === JSON.stringify(r.before) && r.log[1] === r.log[0], 'something changed: ' + JSON.stringify({ before: r.before, after: r.after }));
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'contract import: reordering checkpoints that have completions is refused (i313)',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            const ids = await seedFakeData(page);
+            const r = await i313Reimport(page, ids.studentIds, { Plan: 2, Cut: 1 }, [i313Cp(1, 'Cut'), i313Cp(2, 'Plan'), i313Cp(3, 'Sand'), i313Cp(4, 'Finish')]);
+            assert(JSON.stringify(r.shown) === JSON.stringify(['Checkpoint 1 ("Plan") has 2 completion records, but the guide\'s checkpoint 1 is "Cut". Checkpoints are matched by position, so those completion records would move to "Cut". A checkpoint was likely removed, inserted or moved in the list: keep each checkpoint that has completion records in its old place, and add new ones at the end. Rewriting a checkpoint\'s wording under the same title is still allowed. (No checkpoint id is stored for it, so only the titles were compared.)', 'Checkpoint 2 ("Cut") has 1 completion record, but the guide\'s checkpoint 2 is "Plan". Checkpoints are matched by position, so those completion records would move to "Plan". A checkpoint was likely removed, inserted or moved in the list: keep each checkpoint that has completion records in its old place, and add new ones at the end. Rewriting a checkpoint\'s wording under the same title is still allowed. (No checkpoint id is stored for it, so only the titles were compared.)']), 'refusal: ' + JSON.stringify(r.shown));
+            assert(JSON.stringify(r.after) === JSON.stringify(r.before) && r.log[1] === r.log[0], 'something changed: ' + JSON.stringify({ before: r.before, after: r.after }));
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'contract import: rewriting checkpoints in place under the same title (capitals and spaces aside) imports, and completions stay put (i313)',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            const ids = await seedFakeData(page);
+            const r = await i313Reimport(page, ids.studentIds, { Plan: 2, Cut: 1, Sand: 1, Finish: 2 }, [i313Cp(1, 'Plan'), i313Cp(2, '  CUT '), i313Cp(3, 'Sand'), i313Cp(4, 'Finish')]);
+            const newTitle = t => t === 'Cut' ? '  CUT ' : t;
+            assert(r.shown.length === 0, 'refused: ' + JSON.stringify(r.shown));
+            assert(JSON.stringify(r.after.cps.map(c => [c.id, c.title, c.description])) === JSON.stringify(r.before.cps.map(c => [c.id, newTitle(c.title), 'Fake v2 ' + newTitle(c.title)])), 'checkpoints: ' + JSON.stringify(r.after.cps));
+            assert(JSON.stringify(r.after.comps) === JSON.stringify(r.before.comps.map(([id, t]) => [id, newTitle(t)])), 'completions moved or lost: ' + JSON.stringify(r.after.comps));
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'contract import: adding a checkpoint at the end imports, and completions stay put (i313)',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            const ids = await seedFakeData(page);
+            const r = await i313Reimport(page, ids.studentIds, { Plan: 2, Cut: 1, Sand: 1, Finish: 2 }, [i313Cp(1, 'Plan'), i313Cp(2, 'Cut'), i313Cp(3, 'Sand'), i313Cp(4, 'Finish'), i313Cp(5, 'Present')]);
+            assert(r.shown.length === 0, 'refused: ' + JSON.stringify(r.shown));
+            assert(JSON.stringify(r.after.cps.map(c => c.title)) === JSON.stringify(['Plan', 'Cut', 'Sand', 'Finish', 'Present']), 'checkpoints: ' + JSON.stringify(r.after.cps));
+            assert(JSON.stringify(r.after.cps.slice(0, 4).map(c => c.id)) === JSON.stringify(r.before.cps.map(c => c.id)), 'checkpoint records were replaced');
+            assert(JSON.stringify(r.after.comps) === JSON.stringify(r.before.comps), 'completions moved or lost: ' + JSON.stringify(r.after.comps));
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'contract import: a checkpoint renamed under the id stored by the last import imports; a different id in its place is refused (i313)',
+        fn: async ({ browser, base }) => {
+            const withId = (n, t, id) => ({ ...i313Cp(n, t), id });
+            const first = [withId(1, 'Plan', 'C313-CP1'), withId(2, 'Cut', 'C313-CP2'), withId(3, 'Sand', 'C313-CP3'), withId(4, 'Finish', 'C313-CP4')];
+            const a = await openApp(browser, base);
+            const swapped = await i313Reimport(a.page, (await seedFakeData(a.page)).studentIds, { Cut: 1 }, [first[0], withId(2, 'Glue', 'C313-CP9'), first[2], first[3]], first);
+            assert(JSON.stringify(swapped.shown) === JSON.stringify(['Checkpoint 2 ("Cut") has 1 completion record, but the guide\'s checkpoint 2 is "Glue". Checkpoints are matched by position, so those completion records would move to "Glue". A checkpoint was likely removed, inserted or moved in the list: keep each checkpoint that has completion records in its old place, and add new ones at the end. Rewriting a checkpoint\'s wording under the same title is still allowed. (Its id from the last import is "C313-CP2"; the guide\'s checkpoint 2 has id "C313-CP9".)']), 'refusal: ' + JSON.stringify(swapped.shown));
+            assert(JSON.stringify(swapped.after) === JSON.stringify(swapped.before), 'something changed: ' + JSON.stringify(swapped.after));
+            const b = await openApp(browser, base);
+            const renamed = await i313Reimport(b.page, (await seedFakeData(b.page)).studentIds, { Cut: 1 }, [first[0], withId(2, 'Cut the parts', 'C313-CP2'), first[2], first[3]], first);
+            assert(renamed.shown.length === 0, 'refused: ' + JSON.stringify(renamed.shown));
+            const cp2 = renamed.after.cps[1];
+            assert(cp2.id === renamed.before.cps[1].id && cp2.title === 'Cut the parts' && cp2.guideCheckpointId === 'C313-CP2', 'checkpoint 2: ' + JSON.stringify(cp2));
+            assert(JSON.stringify(renamed.after.comps) === JSON.stringify([[renamed.before.comps[0][0], 'Cut the parts']]), 'completions: ' + JSON.stringify(renamed.after.comps));
+            assert(real(a.errors).length === 0 && real(b.errors).length === 0, 'page errors: ' + real(a.errors).concat(real(b.errors)).join(' | '));
+            await a.context.close(); await b.context.close();
+        }
+    },
+    {
+        name: 'classroom: Full Edit with a course chosen has no Skill & PP Assignments box; Full Edit and quick-form saves keep ppClassroomLinks, skill links and category keys (i301)',
+        fn: async ({ browser, base }) => {
+            const stub = new WebhookStub();
+            const ls = { webhook_wildcat: 'https://script.google.com/macros/s/TEST/exec', webhook_token: 'test-token',
+                'classroom-skills-category-FAKE-COURSE-1': 'FAKE-CAT-S', 'classroom-pp-category-FAKE-COURSE-1': 'FAKE-CAT-P' };
+            const { page, errors, context } = await openApp(browser, base, { stub, localStorageInit: ls });
+            const { activityId } = await seedFakeData(page);
+            const skillId = await page.evaluate(async activityId => {
+                const now = new Date().toISOString();
+                const id = await db.skills.add({ name: 'Fake Skill Alpha', category: 'Design', classroomLinks: { 'FAKE-COURSE-1': 'FAKE-SKILL-CW' }, createdAt: now });
+                await db.activitySkills.add({ activityId, skillId: id, createdAt: now });
+                await db.activities.update(activityId, { classroomLinks: { 'FAKE-COURSE-1': 'OWN-CW' }, ppClassroomLinks: { 'FAKE-COURSE-1': 'FAKE-PP-CW' } });
+                return id;
+            }, activityId);
+            stub.reply('list_classroom_courses', { status: 'success', courses: [{ id: 'FAKE-COURSE-1', name: 'Fake Course', gradeCategories: [{ id: 'FAKE-CAT-S', name: 'Fake Skills', weight: 500000 }] }] });
+            stub.reply('list_classroom_coursework', { status: 'success', coursework: [{ id: 'OWN-CW', title: 'Test Activity 1', maxPoints: 100 }] });
+            stub.reply('list_classroom_topics', { status: 'success', topics: [] });
+            await page.evaluate(id => modals.openFullEdit(id), activityId);
+            await page.waitForFunction(() => pages.activityEdit._formFor && pages.activityEdit._formFor.mode === 'edit', null, { timeout: 10000 });
+            await page.waitForTimeout(300);
+            // Load Courses picks the saved course back and shows its sub-fields
+            await page.evaluate(() => pages.activityEdit.loadCourses());
+            await page.waitForFunction(() => document.getElementById('fe-classroom-course').value === 'FAKE-COURSE-1' && document.getElementById('fe-cw-group').style.display !== 'none', null, { timeout: 5000 });
+            await page.waitForTimeout(300);
+            const shown = await page.evaluate(() => ({
+                box: !!document.getElementById('fe-skill-link-status'),
+                text: document.getElementById('page-activity-edit').innerText.includes('Skill & PP Assignments'),
+                buttons: [...document.querySelectorAll('#page-activity-edit button')].map(b => b.textContent.trim()).filter(t => /Create (Skill|PP) Assignment/.test(t)),
+                fns: ['updateSkillLinkStatus', 'saveGradeCategorySelection', 'createSkillAssignments', 'createPPAssignment'].filter(f => f in pages.activityEdit)
+            }));
+            assert(!shown.box && !shown.text && shown.buttons.length === 0 && shown.fns.length === 0, 'the Skill & PP box is still there: ' + JSON.stringify(shown));
+            await page.evaluate(() => pages.activityEdit.save());
+            await page.waitForTimeout(800);
+            const read = () => page.evaluate(async ({ activityId, skillId }) => {
+                const a = await db.activities.get(activityId);
+                return { own: a.classroomLinks, pp: a.ppClassroomLinks, skill: (await db.skills.get(skillId)).classroomLinks,
+                    cats: [localStorage.getItem('classroom-skills-category-FAKE-COURSE-1'), localStorage.getItem('classroom-pp-category-FAKE-COURSE-1')] };
+            }, { activityId, skillId });
+            const want = JSON.stringify({ own: { 'FAKE-COURSE-1': 'OWN-CW' }, pp: { 'FAKE-COURSE-1': 'FAKE-PP-CW' }, skill: { 'FAKE-COURSE-1': 'FAKE-SKILL-CW' }, cats: ['FAKE-CAT-S', 'FAKE-CAT-P'] });
+            const afterFull = await read();
+            assert(JSON.stringify(afterFull) === want, 'after the Full Edit save: ' + JSON.stringify(afterFull));
+            // The quick form's save keeps them too
+            await page.evaluate(async aid => {
+                await modals.showEditActivity(aid);
+                await new Promise(r => setTimeout(r, 600));
+                await modals.saveActivity();
+                await new Promise(r => setTimeout(r, 600));
+            }, activityId);
+            const afterQuick = await read();
+            assert(JSON.stringify(afterQuick) === want, 'after the quick-form save: ' + JSON.stringify(afterQuick));
+            assert(stub.callsFor('create_classroom_coursework').length === 0, 'a Classroom assignment was created');
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    // ── i302: Full Edit's "+ Create in Classroom" / "↑ Update" buttons, the helper line, and unlinking ──
+    // Shared setup: a fake webhook with two courses, and two fake assignments (A, B) with no links
+    // (each test adds the links it needs).
+    ...(() => {
+        const ls = { webhook_wildcat: 'https://script.google.com/macros/s/TEST/exec', webhook_token: 'test-token' };
+        const setup = async (browser, base, { createDelay = 0 } = {}) => {
+            const stub = new WebhookStub();
+            stub.reply('list_classroom_courses', { status: 'success', courses: [{ id: 'FAKE-COURSE-1', name: 'Fake Course 1' }, { id: 'FAKE-COURSE-2', name: 'Fake Course 2' }] });
+            stub.reply('list_classroom_coursework', { status: 'success', coursework: [{ id: 'FAKE-CW-A', title: 'Fake coursework A', maxPoints: 100 }, { id: 'FAKE-CW-OTHER', title: 'Fake coursework other', maxPoints: 50 }] });
+            stub.reply('list_classroom_topics', { status: 'success', topics: [] });
+            stub.sequence('create_classroom_coursework', [
+                { status: 'success', courseworkId: 'FAKE-CW-NEW-1', title: 'Fake new 1', maxPoints: 100 },
+                { status: 'success', courseworkId: 'FAKE-CW-NEW-2', title: 'Fake new 2', maxPoints: 100 }
+            ]);
+            if (createDelay) stub.delay('create_classroom_coursework', createDelay);
+            const app = await openApp(browser, base, { stub, localStorageInit: ls });
+            const ids = await seedFakeData(app.page);
+            const bId = await app.page.evaluate(classId => {
+                const today = getTodayString(), now = new Date().toISOString();
+                return db.activities.add({ name: 'Test Activity B', classId, startDate: today, endDate: today, status: 'active', scoringType: 'complete-incomplete', createdAt: now, updatedAt: now });
+            }, ids.classId);
+            const page = app.page;
+            const h = {
+                ...app, stub, aId: ids.activityId, bId,
+                // Full Edit for one assignment, fully loaded
+                open: async id => {
+                    await page.evaluate(id => modals.openFullEdit(id), id);
+                    await page.waitForFunction(id => pages.activityEdit._formFor && pages.activityEdit._formFor.id === id, id, { timeout: 5000 });
+                    await page.waitForTimeout(200);
+                },
+                // "Load Courses", then (optionally) a course picked from the dropdown, as she would
+                loadCourses: async () => { await page.evaluate(() => pages.activityEdit.loadCourses()); await page.waitForTimeout(500); },
+                pickCourse: async courseId => {
+                    await page.evaluate(c => { const s = document.getElementById('fe-classroom-course'); s.value = c; return pages.activityEdit.loadCoursework(); }, courseId);
+                    await page.waitForTimeout(300);
+                },
+                view: () => page.evaluate(() => ({
+                    create: document.getElementById('fe-create-cw-btn').style.display !== 'none',
+                    update: document.getElementById('fe-update-cw-btn').style.display !== 'none',
+                    helper: document.getElementById('fe-cw-helper').textContent,
+                    course: document.getElementById('fe-classroom-course').value,
+                    cw: document.getElementById('fe-classroom-cw').value
+                })),
+                links: id => page.evaluate(id => db.activities.get(id).then(a => a.classroomLinks || null), id),
+                save: async () => { await page.evaluate(() => pages.activityEdit.save()); await page.waitForTimeout(600); }
+            };
+            return h;
+        };
+        return [
+            {
+                name: 'Full Edit Classroom (i302): after "+ Create in Classroom" and Save on one assignment, the next assignment still shows "+ Create in Classroom"',
+                fn: async ({ browser, base }) => {
+                    const h = await setup(browser, base);
+                    await h.open(h.aId);
+                    await h.loadCourses();
+                    await h.pickCourse('FAKE-COURSE-1');
+                    await h.page.evaluate(() => pages.activityEdit.createCoursework());
+                    const onA = await h.view();
+                    assert(!onA.create && !onA.update && onA.cw === 'PENDING_CREATE', 'A after Create: ' + JSON.stringify(onA));
+                    await h.save();
+                    const aLinks = await h.links(h.aId);
+                    assert(aLinks && aLinks['FAKE-COURSE-1'] === 'FAKE-CW-NEW-1', 'A was not linked to its new coursework: ' + JSON.stringify(aLinks));
+                    // B, never created in Classroom: Create is there as soon as it opens, and after its course is picked
+                    await h.open(h.bId);
+                    const opened = await h.view();
+                    assert(opened.create && !opened.update && opened.helper === '', 'B as opened: ' + JSON.stringify(opened));
+                    await h.loadCourses();
+                    await h.pickCourse('FAKE-COURSE-1');
+                    const picked = await h.view();
+                    assert(picked.create && !picked.update && picked.helper === '' && picked.cw === '', 'B with Fake Course 1 picked: ' + JSON.stringify(picked));
+                    assert(!(await h.links(h.bId)), 'B got a link');
+                    assert(real(h.errors).length === 0, 'page errors: ' + real(h.errors).join(' | '));
+                    await h.context.close();
+                }
+            },
+            {
+                name: 'Full Edit Classroom (i302): a linked assignment shows "↑ Update"; the next, unlinked one shows "+ Create", no Update, and no "Linked" line',
+                fn: async ({ browser, base }) => {
+                    const h = await setup(browser, base);
+                    await h.page.evaluate(id => db.activities.update(id, { classroomLinks: { 'FAKE-COURSE-1': 'FAKE-CW-A' } }), h.aId);
+                    await h.open(h.aId);
+                    await h.loadCourses();
+                    const onA = await h.view();
+                    assert(onA.course === 'FAKE-COURSE-1' && onA.cw === 'FAKE-CW-A' && onA.update && !onA.create && onA.helper === 'Linked to this assignment', 'A: ' + JSON.stringify(onA));
+                    // Another course on A: not linked there, so Create, no Update
+                    await h.pickCourse('FAKE-COURSE-2');
+                    const otherCourse = await h.view();
+                    assert(otherCourse.create && !otherCourse.update && otherCourse.helper === '', 'A on another course: ' + JSON.stringify(otherCourse));
+                    await h.open(h.bId);
+                    const opened = await h.view();
+                    assert(opened.create && !opened.update && opened.helper === '', 'B as opened: ' + JSON.stringify(opened));
+                    await h.loadCourses();
+                    await h.pickCourse('FAKE-COURSE-1');
+                    const picked = await h.view();
+                    assert(picked.create && !picked.update && picked.helper === '' && picked.cw === '', 'B with the same course picked: ' + JSON.stringify(picked));
+                    assert(real(h.errors).length === 0, 'page errors: ' + real(h.errors).join(' | '));
+                    await h.context.close();
+                }
+            },
+            {
+                name: 'Full Edit Classroom (i302): a saved link that is not in the course\'s Classroom list shows "+ Create" and says it wasn\'t found, not "Linked" and "↑ Update"',
+                fn: async ({ browser, base }) => {
+                    const h = await setup(browser, base);
+                    await h.page.evaluate(id => db.activities.update(id, { classroomLinks: { 'FAKE-COURSE-1': 'FAKE-CW-GONE' } }), h.bId);
+                    await h.open(h.bId);
+                    await h.loadCourses();
+                    const v = await h.view();
+                    assert(v.course === 'FAKE-COURSE-1' && v.cw === '', 'course/coursework shown: ' + JSON.stringify(v));
+                    assert(v.create && !v.update, 'buttons: ' + JSON.stringify(v));
+                    assert(/not found in this course in Classroom/.test(v.helper) && !/Linked to this assignment/.test(v.helper), 'helper: ' + v.helper);
+                    // Saving without choosing anything keeps the link (it may only be missing from the list)
+                    await h.save();
+                    const kept = await h.links(h.bId);
+                    assert(kept && kept['FAKE-COURSE-1'] === 'FAKE-CW-GONE', 'a plain Save changed the stale link: ' + JSON.stringify(kept));
+                    assert(real(h.errors).length === 0, 'page errors: ' + real(h.errors).join(' | '));
+                    await h.context.close();
+                }
+            },
+            {
+                name: 'Full Edit Classroom (i302): "Not linked" + Save removes that course\'s link (a stale one too), keeps the others, and stamps updatedAt; a Save without Load Courses keeps links',
+                fn: async ({ browser, base }) => {
+                    const h = await setup(browser, base);
+                    const before = '2026-01-01T00:00:00.000Z';
+                    await h.page.evaluate(({ aId, bId, before }) => Promise.all([
+                        db.activities.update(aId, { classroomLinks: { 'FAKE-COURSE-1': 'FAKE-CW-A', 'FAKE-COURSE-2': 'FAKE-CW-OTHER' }, updatedAt: before }),
+                        db.activities.update(bId, { classroomLinks: { 'FAKE-COURSE-1': 'FAKE-CW-GONE' }, updatedAt: before })
+                    ]), { aId: h.aId, bId: h.bId, before });
+                    // Open and Save without touching the Classroom section: nothing is removed
+                    await h.open(h.aId);
+                    await h.save();
+                    const untouched = await h.links(h.aId);
+                    assert(untouched && untouched['FAKE-COURSE-1'] === 'FAKE-CW-A' && untouched['FAKE-COURSE-2'] === 'FAKE-CW-OTHER', 'Save without Load Courses: ' + JSON.stringify(untouched));
+                    // Load Courses shows Fake Course 1; "Not linked" + Save removes only that course's link
+                    await h.page.evaluate(({ aId, before }) => db.activities.update(aId, { updatedAt: before }), { aId: h.aId, before });
+                    await h.open(h.aId);
+                    await h.loadCourses();
+                    await h.pickCourse('');
+                    const v = await h.view();
+                    await h.save();
+                    const a = await h.page.evaluate(id => db.activities.get(id), h.aId);
+                    assert(a.classroomLinks && !('FAKE-COURSE-1' in a.classroomLinks) && a.classroomLinks['FAKE-COURSE-2'] === 'FAKE-CW-OTHER', 'A after unlinking course 1: ' + JSON.stringify(a.classroomLinks));
+                    assert(a.updatedAt > before, 'updatedAt not stamped, so the other device would not get it: ' + a.updatedAt);
+                    assert(!v.course && v.create && !v.update && v.helper === '', 'after Not linked: ' + JSON.stringify(v));
+                    // The stale link on B: "Not linked" + Save leaves B with no link at all
+                    await h.open(h.bId);
+                    await h.loadCourses();
+                    await h.pickCourse('');
+                    await h.save();
+                    const b = await h.page.evaluate(id => db.activities.get(id), h.bId);
+                    assert(!b.classroomLinks, 'B kept its stale link: ' + JSON.stringify(b.classroomLinks));
+                    assert(b.updatedAt > before, 'B updatedAt not stamped: ' + b.updatedAt);
+                    // Choosing "Not linked" and then the course again keeps the link
+                    await h.open(h.aId);
+                    await h.loadCourses();
+                    await h.pickCourse('');
+                    await h.pickCourse('FAKE-COURSE-2');
+                    await h.save();
+                    const back = await h.links(h.aId);
+                    assert(back && back['FAKE-COURSE-2'] === 'FAKE-CW-OTHER', 'picked again, but unlinked: ' + JSON.stringify(back));
+                    assert(real(h.errors).length === 0, 'page errors: ' + real(h.errors).join(' | '));
+                    await h.context.close();
+                }
+            },
+            {
+                name: 'Full Edit Classroom (i302): a link is stored only on the assignment it was made for (a save still waiting on Classroom leaves the next form alone; a selection this form didn\'t load is never saved)',
+                fn: async ({ browser, base }) => {
+                    const h = await setup(browser, base, { createDelay: 1500 });
+                    // A: Create in Fake Course 1, then Save; Classroom takes a while to answer
+                    await h.open(h.aId);
+                    await h.loadCourses();
+                    await h.pickCourse('FAKE-COURSE-1');
+                    await h.page.evaluate(() => pages.activityEdit.createCoursework());
+                    await h.page.evaluate(() => { window.__aSave = pages.activityEdit.save(); });
+                    await h.page.waitForTimeout(300);
+                    // Meanwhile she opens B, and chooses Create in Fake Course 2 there
+                    await h.open(h.bId);
+                    await h.loadCourses();
+                    await h.pickCourse('FAKE-COURSE-2');
+                    await h.page.evaluate(() => pages.activityEdit.createCoursework());
+                    await h.page.evaluate(() => window.__aSave);
+                    await h.page.waitForTimeout(300);
+                    const aLinks = await h.links(h.aId);
+                    assert(aLinks && aLinks['FAKE-COURSE-1'] === 'FAKE-CW-NEW-1' && Object.keys(aLinks).length === 1, 'A: ' + JSON.stringify(aLinks));
+                    assert(!(await h.links(h.bId)), 'B got a link from A\'s save');
+                    const still = await h.page.evaluate(() => ({ formId: pages.activityEdit._formFor && pages.activityEdit._formFor.id, pending: Object.keys(state._classroomPendingCreate || {}) }));
+                    assert(still.formId === h.bId && still.pending.join() === 'FAKE-COURSE-2', 'A\'s save cleared B\'s form: ' + JSON.stringify(still));
+                    await h.save();
+                    await h.page.waitForTimeout(1500);
+                    const bLinks = await h.links(h.bId);
+                    assert(bLinks && bLinks['FAKE-COURSE-2'] === 'FAKE-CW-NEW-2' && Object.keys(bLinks).length === 1, 'B: ' + JSON.stringify(bLinks));
+                    const titles = h.stub.callsFor('create_classroom_coursework').map(c => c.body.courseId + ':' + c.body.title);
+                    assert(JSON.stringify(titles) === JSON.stringify(['FAKE-COURSE-1:Test Activity 1', 'FAKE-COURSE-2:Test Activity B']), 'creates: ' + JSON.stringify(titles));
+                    // A course and coursework on screen that this open of the form didn't load (as before FF11,
+                    // or a slow reply from the last assignment) are never saved as a link
+                    await h.page.evaluate(id => db.activities.update(id, { classroomLinks: null }), h.bId);
+                    await h.open(h.bId);
+                    await h.page.evaluate(() => {
+                        document.getElementById('fe-classroom-course').innerHTML = '<option value="">Not linked</option><option value="FAKE-COURSE-1" selected>Fake Course 1</option>';
+                        document.getElementById('fe-classroom-cw').innerHTML = '<option value="">Select assignment...</option><option value="FAKE-CW-A" selected>Fake coursework A</option>';
+                    });
+                    await h.save();
+                    assert(!(await h.links(h.bId)), 'a selection this form never loaded was saved: ' + JSON.stringify(await h.links(h.bId)));
+                    assert(real(h.errors).length === 0, 'page errors: ' + real(h.errors).join(' | '));
+                    await h.context.close();
+                }
+            }
+        ];
+    })(),
+    {
+        name: 'feedback-log notes (i226): a note about a student never shows as the notes or "sent" of the assignment that shares the student\'s id; an ordinary assignment note still shows',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            const ids = await seedFakeData(page);
+            const seeded = await page.evaluate(async ({ classId, sid, aid }) => {
+                const now = new Date().toISOString();
+                const otherId = await db.activities.add({ name: 'Fake Bridge Lab', classId, startDate: getTodayString(), endDate: getTodayString(),
+                    status: 'active', scoringType: 'complete-incomplete', createdAt: now, updatedAt: now });
+                const other = await db.activities.get(otherId);
+                // Feedback for the other assignment, sent to the student whose id equals this assignment's id
+                await db.notes.add(formImport.feedbackLog(other, sid));
+                await db.notes.add({ entityType: 'activity', entityId: aid, content: 'Fake shop note for this assignment', createdAt: now });
+                return { otherId };
+            }, { classId: ids.classId, sid: ids.studentIds[0], aid: ids.activityId });
+            assert(ids.studentIds[0] === ids.activityId && seeded.otherId !== ids.activityId, 'the fake data no longer lines a student id up with the assignment id: ' + JSON.stringify(ids));
+            await page.evaluate(aid => { state.selectedActivity = aid; router.navigate('activity-detail'); }, ids.activityId);
+            await page.waitForTimeout(600);
+            const shown = await page.evaluate(() => ({
+                pipeline: document.getElementById('activity-pipeline-status').textContent.replace(/\s+/g, ' '),
+                notes: document.getElementById('notes-list-activity').textContent
+            }));
+            assert(/Feedback: None/.test(shown.pipeline) && !/sent/.test(shown.pipeline), 'the student\'s feedback-log counted as this assignment\'s feedback: ' + shown.pipeline);
+            assert(shown.notes.includes('Fake shop note for this assignment'), 'the ordinary assignment note is missing: ' + shown.notes);
+            assert(!/Feedback sent for/.test(shown.notes), 'a feedback-log note shows in the assignment notes: ' + shown.notes);
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'feedback-log notes (i226): still count on their own assignment (new and older records), on the student\'s Assignments tab, and in "already sent today"',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            const ids = await seedFakeData(page);
+            const otherId = await page.evaluate(async ({ classId, sids }) => {
+                const now = new Date().toISOString();
+                const id = await db.activities.add({ name: 'Fake Bridge Lab', classId, startDate: getTodayString(), endDate: getTodayString(),
+                    status: 'active', scoringType: 'complete-incomplete', createdAt: now, updatedAt: now });
+                const other = await db.activities.get(id);
+                await db.notes.add(formImport.feedbackLog(other, sids[0]));
+                // An older record, written before activityId was stored: the assignment is only in its text
+                await db.notes.add({ entityType: 'feedback-log', entityId: sids[2], content: `Feedback sent for "Fake Bridge Lab" on ${getTodayString()}`, createdAt: now });
+                return id;
+            }, { classId: ids.classId, sids: ids.studentIds });
+            await page.evaluate(aid => { state.selectedActivity = aid; router.navigate('activity-detail'); }, otherId);
+            await page.waitForTimeout(600);
+            const pipeline = await page.evaluate(() => document.getElementById('activity-pipeline-status').textContent.replace(/\s+/g, ' '));
+            assert(/Feedback: 2 sent/.test(pipeline), 'its own assignment did not count both feedback-logs: ' + pipeline);
+            const sentToday = await page.evaluate(async aid => [...await formImport.feedbackSentToday(await db.activities.get(aid))].sort(), otherId);
+            assert(JSON.stringify(sentToday) === JSON.stringify([ids.studentIds[0], ids.studentIds[2]].sort()), 'already sent today: ' + JSON.stringify(sentToday));
+            const none = await page.evaluate(async aid => [...await formImport.feedbackSentToday(await db.activities.get(aid))], ids.activityId);
+            assert(none.length === 0, 'the other assignment counts as sent today: ' + JSON.stringify(none));
+            await page.evaluate(id => viewStudent(id), ids.studentIds[0]);
+            await page.waitForTimeout(400);
+            const rows = await page.evaluate(async () => {
+                await pages.studentDetail.renderAssignmentsTab();
+                return [...document.querySelectorAll('#student-assignments-content tbody tr')].map(tr => [...tr.cells].map(td => td.textContent.trim()));
+            });
+            const row = name => rows.find(r => r[0] === name);
+            assert(row('Fake Bridge Lab') && row('Fake Bridge Lab')[4] === 'Sent', 'the student\'s page does not show the feedback as sent: ' + JSON.stringify(rows));
+            assert(row('Test Activity 1') && row('Test Activity 1')[4] !== 'Sent', 'the student\'s page shows feedback sent for the wrong assignment: ' + JSON.stringify(rows));
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'release check (i304): the update bar records the Data check counts, the version and the time just before the reload, after the unsaved-work check; the app records them again when it starts; nothing goes to IndexedDB',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            await seedFakeData(page);
+            // The app this page was loaded with is esb-v127; the update brings esb-v128 (fake cache names)
+            await page.evaluate(() => caches.open('esb-v127'));
+            await page.reload({ waitUntil: 'load' });
+            await waitForStartup(page);
+            const counts = () => page.evaluate(async () => { const c = {}; for (const t of db.tables) c[t.name] = (await t.toArray()).length; return c; });
+            const dump = () => page.evaluate(async () => { const d = {}; for (const t of db.tables) if (!releaseCheck.EXPECTED_TO_CHANGE.includes(t.name)) d[t.name] = await t.toArray(); return JSON.stringify(d); });
+            const gone = async () => { try { return await page.evaluate(() => window.__beforeReload !== true); } catch (e) { return true; } };
+            const waitGone = async (ms) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (await gone()) return true; await page.waitForTimeout(100); } return false; };
+            assert(await page.evaluate(() => localStorage.getItem('release-check')) === null, 'a check was recorded before any update');
+
+            // 1. Unsaved attendance marks: the bar holds, and nothing is recorded
+            await page.evaluate(() => { const h = pages.attendance.hasUnsavedChanges; window.__restoreAtt = () => { pages.attendance.hasUnsavedChanges = h; }; pages.attendance.hasUnsavedChanges = () => true; window.__beforeReload = true; showUpdateToast({ postMessage: () => {} }); document.getElementById('sw-update-toast').click(); });
+            await page.waitForTimeout(500);
+            const held = await page.evaluate(() => ({ here: window.__beforeReload === true, rc: localStorage.getItem('release-check') }));
+            assert(held.here && held.rc === null, 'the check was recorded while unsaved work held the reload: ' + JSON.stringify(held));
+            await page.evaluate(() => { window.__restoreAtt(); document.getElementById('sw-update-toast').remove(); });
+
+            // 2. The tap reloads: the worker's SKIP_WAITING message already sees the recorded counts
+            const atTap = await counts();
+            const idbAtTap = await dump();
+            await page.evaluate(() => caches.open('esb-v128'));
+            await page.evaluate(() => {
+                window.__beforeReload = true;
+                const worker = { postMessage: m => sessionStorage.setItem('i304-posted', m.type + ' ' + (localStorage.getItem('release-check') || 'nothing recorded')) };
+                showUpdateToast(worker);
+                document.getElementById('sw-update-toast').click();
+            });
+            assert(await waitGone(10000), 'the tap did not reload');
+            await page.waitForLoadState('load');
+            await waitForStartup(page);
+            const posted = await page.evaluate(() => sessionStorage.getItem('i304-posted'));
+            assert(posted && posted.startsWith('SKIP_WAITING {'), 'the counts were not recorded before the worker was told to take over: ' + posted);
+            const atPost = JSON.parse(posted.slice('SKIP_WAITING '.length));
+            assert(Object.keys(atTap).every(k => atPost.before.counts[k] === atTap[k]), 'recorded counts differ from the Data check: ' + JSON.stringify({ rec: atPost.before.counts, dc: atTap }));
+            assert(Object.keys(atPost.before.counts).length === Object.keys(atTap).length, 'not every table was recorded');
+            assert(atPost.before.counts.students === 4 && atPost.before.reason === 'update' && atPost.pendingAfter === true && atPost.after === null, 'recording before the reload: ' + JSON.stringify(atPost));
+            assert(atPost.before.version === 'esb-v127' && atPost.before.newVersion === 'esb-v128', 'versions: ' + JSON.stringify(atPost.before));
+            assert(Math.abs(Date.now() - Date.parse(atPost.before.at)) < 60000, 'the time was not recorded: ' + atPost.before.at);
+
+            // 3. After the reload: the after counts are recorded once, and the card says Same
+            const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('release-check')));
+            assert(stored.pendingAfter === false && stored.after && stored.after.version === 'esb-v128', 'after the reload: ' + JSON.stringify(stored));
+            assert(Object.keys(atTap).every(k => ['activityLog', 'alerts'].includes(k) || stored.before.counts[k] === stored.after.counts[k]), 'counts moved across the reload: ' + JSON.stringify(stored));
+            const text = JSON.stringify(stored);
+            assert(!/Ada|Tester|O'Brien|Sample|Fixture|example\.test|Test Engineering/.test(text), 'the record holds names: ' + text);
+            assert(await dump() === idbAtTap, 'IndexedDB changed across the recording');
+
+            await page.evaluate(() => router.navigate('settings'));
+            await page.click('button.tab-btn:has-text("Data")');
+            await page.waitForSelector('#release-check-body table');
+            const card = await page.evaluate(() => ({
+                summary: document.getElementById('release-check-summary').textContent,
+                before: document.getElementById('release-check-before-meta').textContent,
+                after: document.getElementById('release-check-after-meta').textContent,
+                head: [...document.querySelectorAll('#release-check-body th')].map(th => th.textContent),
+                rows: Object.fromEntries([...document.querySelectorAll('#release-check-body tr[data-table]')].map(tr => [tr.dataset.table, [tr.querySelector('.release-check-before').textContent, tr.querySelector('.release-check-after').textContent, tr.querySelector('.release-check-result').textContent]]))
+            }));
+            assert(card.summary === 'Every line Same.', 'summary: ' + card.summary);
+            assert(card.before.includes('esb-v127, updating to esb-v128 · recorded when the update bar reloaded the app'), 'before line: ' + card.before);
+            assert(card.after.includes('esb-v128 · recorded when the app started again'), 'after line: ' + card.after);
+            assert(JSON.stringify(card.head) === '["Table","Before","After","Result"]', 'headings: ' + card.head);
+            assert(JSON.stringify(card.rows.students) === '["4","4","Same"]', 'students row: ' + card.rows.students);
+            assert(card.rows.activityLog[2] === 'Expected to change' && card.rows.alerts[2] === 'Expected to change', 'expected rows: ' + JSON.stringify([card.rows.activityLog, card.rows.alerts]));
+            assert(Object.keys(card.rows).length === Object.keys(atTap).length, 'not every table is listed');
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'release check (i304): each line says Same (green), Changed (red) or Expected to change; a missing table counts as Changed',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            const record = {
+                before: { at: '2026-10-20T19:00:00.000Z', version: 'esb-v127', newVersion: 'esb-v128', reason: 'update', counts: { students: 4, classes: 1, activityLog: 10, alerts: 2, notes: 3, oldTable: 1 } },
+                after: { at: '2026-10-20T19:00:05.000Z', version: 'esb-v128', counts: { students: 5, classes: 1, activityLog: 12, alerts: 2, notes: 3, newTable: 0 } },
+                pendingAfter: false
+            };
+            await page.evaluate(r => localStorage.setItem('release-check', JSON.stringify(r)), record);
+            await page.evaluate(() => router.navigate('settings'));
+            await page.click('button.tab-btn:has-text("Data")');
+            await page.waitForSelector('#release-check-body table');
+            const got = await page.evaluate(() => ({
+                summary: document.getElementById('release-check-summary').textContent,
+                summaryColour: getComputedStyle(document.getElementById('release-check-summary')).color,
+                rows: [...document.querySelectorAll('#release-check-body tr[data-table]')].map(tr => {
+                    const res = tr.querySelector('.release-check-result');
+                    return [tr.dataset.table, tr.querySelector('.release-check-before').textContent, tr.querySelector('.release-check-after').textContent, res.textContent, getComputedStyle(res).color];
+                })
+            }));
+            const green = 'rgb(22, 163, 74)', red = 'rgb(200, 16, 46)', grey = 'rgb(163, 163, 163)';
+            const want = [
+                ['activityLog', '10', '12', 'Expected to change', grey],
+                ['alerts', '2', '2', 'Expected to change', grey],
+                ['classes', '1', '1', 'Same', green],
+                ['newTable', 'none', '0', 'Changed', red],
+                ['notes', '3', '3', 'Same', green],
+                ['oldTable', '1', 'none', 'Changed', red],
+                ['students', '4', '5', 'Changed', red]
+            ];
+            assert(JSON.stringify(got.rows) === JSON.stringify(want), 'rows: ' + JSON.stringify(got.rows));
+            assert(got.summary === 'Changed: 3 tables (newTable, oldTable, students). Check them before carrying on.' && got.summaryColour === red, 'summary: ' + JSON.stringify(got));
+            // One changed table reads in the singular
+            await page.evaluate(() => { const r = JSON.parse(localStorage.getItem('release-check')); r.after.counts = { ...r.before.counts, students: 5 }; localStorage.setItem('release-check', JSON.stringify(r)); return releaseCheck.render(); });
+            assert(await page.textContent('#release-check-summary') === 'Changed: 1 table (students). Check them before carrying on.', 'singular summary');
+            // A broken record shows the empty state, not an error
+            await page.evaluate(() => { localStorage.setItem('release-check', '{not json'); return releaseCheck.render(); });
+            assert(await page.textContent('#release-check-body') === 'Nothing recorded yet. The next update records the counts by itself, or tap Record now.', 'broken record');
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'release check (i304): Record now records a manual check and compares it with the counts now; the next start records the after counts',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            await seedFakeData(page);
+            await page.evaluate(() => router.navigate('settings'));
+            await page.click('button.tab-btn:has-text("Data")');
+            await page.waitForSelector('#release-check-body p');
+            assert(await page.textContent('#release-check-body') === 'Nothing recorded yet. The next update records the counts by itself, or tap Record now.', 'empty state');
+            assert(await page.textContent('#release-check-record-btn') === 'Record now', 'button words');
+            await page.click('#release-check-record-btn');
+            await page.waitForSelector('#release-check-body table');
+            const rec = await page.evaluate(() => JSON.parse(localStorage.getItem('release-check')));
+            assert(rec.before.reason === 'manual' && rec.before.counts.students === 4 && rec.after === null && rec.pendingAfter === true, 'manual record: ' + JSON.stringify(rec));
+            const first = await page.evaluate(() => ({
+                summary: document.getElementById('release-check-summary').textContent,
+                before: document.getElementById('release-check-before-meta').textContent,
+                after: document.querySelector('#release-check-body').textContent,
+                head: [...document.querySelectorAll('#release-check-body th')].map(th => th.textContent),
+                toast: document.body.textContent.includes('Counts recorded (no names)')
+            }));
+            assert(first.summary === 'Every line Same.' && first.before.endsWith('recorded with Record now'), 'card after Record now: ' + JSON.stringify(first));
+            assert(first.after.includes('Now: the counts at this moment (the app has not restarted since the recording)') && first.head[2] === 'Now' && first.toast, 'Now column: ' + JSON.stringify(first));
+            // A student added since: that line says Changed
+            await page.evaluate(async () => { const t = new Date().toISOString(); await db.students.add({ firstName: 'Fake', lastName: 'Extra', status: 'active', createdAt: t, updatedAt: t }); await releaseCheck.render(); });
+            assert(await page.textContent('#release-check-body tr[data-table="students"] .release-check-result') === 'Changed', 'the added student did not show as Changed');
+            assert(await page.textContent('#release-check-summary') === 'Changed: 1 table (students). Check them before carrying on.', 'summary after the change');
+            // The next start records the after counts; Record now again starts over
+            await page.reload({ waitUntil: 'load' });
+            await waitForStartup(page);
+            const after = await page.evaluate(() => JSON.parse(localStorage.getItem('release-check')));
+            assert(after.pendingAfter === false && after.after.counts.students === 5, 'after counts on the next start: ' + JSON.stringify(after.after));
+            await page.evaluate(() => router.navigate('settings'));
+            await page.click('button.tab-btn:has-text("Data")');
+            await page.waitForSelector('#release-check-body table');
+            assert(await page.textContent('#release-check-body th:nth-child(3)') === 'After', 'After column after the restart');
+            await page.click('#release-check-record-btn');
+            await page.waitForFunction(() => JSON.parse(localStorage.getItem('release-check')).after === null && (document.querySelector('#release-check-body th:nth-child(3)') || {}).textContent === 'Now');
+            assert(await page.textContent('#release-check-summary') === 'Every line Same.', 'Record now did not start over');
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'release check (i304): recording writes nothing to IndexedDB, adds no database or table, leaves the Dexie version alone, and is not in the sync file or Export JSON',
+        fn: async ({ browser, base }) => {
+            const stub = new WebhookStub();
+            const { page, errors, context } = await openApp(browser, base, { stub });
+            await seedFakeData(page);
+            const state = () => page.evaluate(async () => {
+                const dbs = (await indexedDB.databases()).map(d => d.name + '@' + d.version).sort();
+                const tables = {};
+                for (const t of db.tables) tables[t.name] = await t.toArray();
+                const sync = await driveSync.buildSyncFile();
+                delete sync.exportDate;
+                return { dbs, verno: db.verno, tableNames: db.tables.map(t => t.name).sort(), tables: JSON.stringify(tables), syncKeys: Object.keys(sync).sort(), sync: JSON.stringify(sync) };
+            });
+            // Opening Settings opens the auto-backups database (autoBackup.renderList) when start-up
+            // hasn't yet (it depends on the time of day), so the reading is taken once Data is open
+            await page.evaluate(() => router.navigate('settings'));
+            await page.click('button.tab-btn:has-text("Data")');
+            await page.waitForFunction(() => { const b = document.getElementById('release-check-body'); return b && !/Loading/.test(b.textContent); });
+            const before = await state();
+            await page.click('#release-check-record-btn');
+            await page.waitForSelector('#release-check-body table');
+            assert(await page.evaluate(() => releaseCheck.recordBeforeReload()) === true, 'recordBeforeReload did not record');
+            await page.evaluate(() => releaseCheck.recordAfterIfPending());
+            const after = await state();
+            assert(JSON.stringify(after.dbs) === JSON.stringify(before.dbs), 'IndexedDB databases changed: ' + JSON.stringify([before.dbs, after.dbs]));
+            assert(after.verno === 15 && before.verno === 15, 'Dexie version: ' + after.verno);
+            assert(JSON.stringify(after.tableNames) === JSON.stringify(before.tableNames), 'tables changed');
+            assert(after.tables === before.tables, 'a record was written to IndexedDB');
+            assert(JSON.stringify(after.syncKeys) === JSON.stringify(before.syncKeys) && after.sync === before.sync, 'the sync file changed');
+            assert(!/release-check|releaseCheck/.test(after.sync), 'the sync file holds the release check');
+            // Export JSON (the Settings button): the text it encrypts holds the same tables only
+            const exported = await page.evaluate(async () => {
+                const enc = secureStorage.encrypt; let raw = null;
+                secureStorage.encrypt = async (json, pw) => { raw = json; return enc.call(secureStorage, json, pw); };
+                try { await pages.settings.exportData(); } finally { secureStorage.encrypt = enc; }
+                return raw;
+            });
+            assert(exported && JSON.stringify(Object.keys(JSON.parse(exported)).filter(k => !['exportDate', 'exportDevice'].includes(k)).sort()) === JSON.stringify(before.syncKeys.filter(k => !['exportDevice'].includes(k)).sort()), 'Export JSON has other keys: ' + (exported && Object.keys(JSON.parse(exported))));
+            assert(!/release-check|releaseCheck|esb-v/.test(exported), 'Export JSON holds the release check');
+            const kept = await page.evaluate(() => JSON.parse(localStorage.getItem('release-check')));
+            assert(kept && kept.before && kept.before.reason === 'update', 'the check is not kept in localStorage');
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
+    },
+    {
+        name: 'release check (i304): a failed count never holds the reload: the count throws, the count hangs past 3 s, localStorage is full; recordBeforeReload() returns false each time and the update bar still reloads',
+        fn: async ({ browser, base }) => {
+            const { page, errors, context } = await openApp(browser, base);
+            await seedFakeData(page);
+            const gone = async () => { try { return await page.evaluate(() => window.__beforeReload !== true); } catch (e) { return true; } };
+            const waitGone = async (ms) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (await gone()) return Date.now() - t0; await page.waitForTimeout(100); } return -1; };
+            // Fills this origin's localStorage until a write is refused (real quota, no stub)
+            const FILL = `() => { const chunk = 'x'.repeat(256 * 1024); let i = 0; try { for (; i < 4000; i++) localStorage.setItem('i304-fill-' + i, chunk); } catch (e) { } let n = 0; try { for (; n < 100000; n++) localStorage.setItem('i304-fill-s' + n, 'xxxxxxxxxxxxxxxx'); } catch (e) { } return i; }`;
+            const cases = {
+                throws: `() => { releaseCheck.countTables = async () => { throw new Error('Fake count failure'); }; }`,
+                hangs: `() => { releaseCheck.countTables = () => new Promise(() => {}); }`,
+                full: FILL
+            };
+            for (const [label, setup] of Object.entries(cases)) {
+                await page.evaluate(() => localStorage.removeItem('release-check'));
+                await page.evaluate(`(${setup})()`);
+                // 1. Called directly: false, no throw, and not much past the 3 s limit
+                const direct = await page.evaluate(async () => {
+                    const t0 = performance.now();
+                    try { const r = await releaseCheck.recordBeforeReload(); return { r, ms: Math.round(performance.now() - t0) }; } catch (e) { return { threw: String(e), ms: Math.round(performance.now() - t0) }; }
+                });
+                assert(direct.r === false && !direct.threw, `${label}: recordBeforeReload() did not return false: ` + JSON.stringify(direct));
+                assert(direct.ms < 4000 && (label !== 'hangs' || direct.ms >= 2900), `${label}: took ${direct.ms} ms`);
+                // 2. Through the update bar: the worker is still told to take over and the page reloads
+                await page.evaluate(() => {
+                    sessionStorage.removeItem('i304-posted');
+                    window.__beforeReload = true;
+                    showUpdateToast({ postMessage: m => sessionStorage.setItem('i304-posted', m.type) });
+                    document.getElementById('sw-update-toast').click();
+                });
+                const ms = await waitGone(8000);
+                assert(ms >= 0, `${label}: the update bar did not reload`);
+                await page.waitForLoadState('load');
+                const after = await page.evaluate(() => ({ posted: sessionStorage.getItem('i304-posted'), rc: localStorage.getItem('release-check') }));
+                assert(after.posted === 'SKIP_WAITING', `${label}: the worker was not told to take over: ` + after.posted);
+                assert(after.rc === null, `${label}: a check was recorded: ` + after.rc);
+                await page.evaluate(() => { for (const k of Object.keys(localStorage)) if (k.startsWith('i304-fill-')) localStorage.removeItem(k); });
+                if (label === 'full') { await page.reload({ waitUntil: 'load' }); }
+                await waitForStartup(page);
+            }
+            assert(real(errors).length === 0, 'page errors: ' + real(errors).join(' | '));
+            await context.close();
+        }
     }
 ];
 
 run(tests);
+
+// i313: imports E9-FAKE-313 with checkpoints Plan, Cut, Sand, Finish (or `first`), gives each checkpoint
+// named in `done` that many completion records (one per fake student), then re-imports it with `next`.
+// Returns the problems shown under the import box, and the checkpoints and completions before and after.
+function i313Cp(number, title) { return { number, title, description: 'Fake v2 ' + title }; }
+async function i313Reimport(page, studentIds, done, next, first) {
+    return page.evaluate(async ({ studentIds, done, next, first }) => {
+        const imp = async g => { document.getElementById('import-contract-json').value = JSON.stringify(g); await pages.settings.importContractGuide('paste'); };
+        router.navigate('settings');
+        await imp({ contractCode: 'E9-FAKE-313', checkpoints: first || ['Plan', 'Cut', 'Sand', 'Finish'].map((title, i) => ({ number: i + 1, title, description: 'Fake v1 ' + title })) });
+        const act = (await db.activities.toArray()).find(x => x.contractCode === 'E9-FAKE-313');
+        const cpsNow = async () => (await db.checkpoints.where('activityId').equals(act.id).toArray()).sort((x, y) => x.number - y.number)
+            .map(c => ({ id: c.id, title: c.title, description: c.description, guideCheckpointId: c.guideCheckpointId }));
+        for (const c of await cpsNow()) for (let s = 0; s < (done[c.title] || 0); s++) {
+            await db.checkpointCompletions.add({ checkpointId: c.id, studentId: studentIds[s], completed: true, completedAt: new Date().toISOString() });
+        }
+        const snap = async () => {
+            const cps = await cpsNow();
+            const comps = (await db.checkpointCompletions.toArray()).map(c => [c.id, (cps.find(x => x.id === c.checkpointId) || { title: null }).title]);
+            return { updatedAt: (await db.activities.get(act.id)).updatedAt, cps, comps };
+        };
+        const before = await snap();
+        const log0 = await db.activityLog.count();
+        await imp({ contractCode: 'E9-FAKE-313', checkpoints: next });
+        const shown = [...document.querySelectorAll('#import-contract-warnings li')].map(li => li.textContent);
+        const after = await snap();
+        return { shown, before, after, log: [log0, await db.activityLog.count()] };
+    }, { studentIds, done, next, first });
+}

@@ -200,12 +200,12 @@ const guards = {
 guards.BUSY = [
     [() => (typeof modals !== 'undefined' ? modals : null), 'modals', ['saveStudent', 'saveTeam', 'saveActivity', 'saveQuickEdit', 'saveInventoryItem', 'submitCheckout', 'checkIn',
         'saveTask', 'saveEvent', 'completeEndClass', 'addTeacher', 'updateClassroomCoursework']],
-    [() => pages.activityEdit, 'activityEdit', ['save', 'syncToHub', 'updateCoursework', 'createSkillAssignments', 'createPPAssignment', 'createTopic']],
+    [() => pages.activityEdit, 'activityEdit', ['save', 'syncToHub', 'updateCoursework', 'createTopic']],
     [() => pages.activityDetail, 'activityDetail', ['sendAllFeedback', 'sendStudentFeedback', 'pushToClassroom', 'checkFormSubmissions', 'saveFormMapping']],
     [() => pages.attendance, 'attendance', ['saveAttendance']],
     [() => pages.students, 'students', ['importFromCSV']],
     [() => pages.studentDetail, 'studentDetail', ['saveNote']],
-    [() => pages.settings, 'settings', ['saveClass', 'saveNonInstructionalDay', 'importContractGuide', 'importData', 'importEquipment', 'importSkillsLibrary', 'importStandards', 'archiveSchoolYear']],
+    [() => pages.settings, 'settings', ['saveClass', 'saveNonInstructionalDay', 'importContractGuide', 'importData', 'importEquipment', 'importSkillsLibrary', 'importStandards', 'archiveSchoolYear', 'updateEquipmentPreview', 'applyEquipmentUpdate']],
     [() => pages.skills, 'skills', ['saveSkill', 'saveStandard', 'saveBulkUpdate', 'saveCertifications']],
     [() => (typeof notesManager !== 'undefined' ? notesManager : null), 'notes', ['addNote']],
     [() => (typeof hubSync !== 'undefined' ? hubSync : null), 'hubSync', ['syncFromCard']]
