@@ -20,6 +20,38 @@ async function getActiveSchoolYear() {
     return `${year}-${year + 1}`;
 }
 
+// 3-16 (DL8): a save or delete that writes several tables runs in one Dexie read-write transaction:
+// all of it is saved, or (on any error) none of it. The activity log (logAction) is always included.
+// fn may only wait on database work: no webhook calls, timers or other promises inside it.
+async function saveTogether(tableNames, fn) {
+    const tables = [...new Set([...tableNames, 'activityLog'])].map(n => db.table(n));
+    return db.transaction('rw', tables, fn);
+}
+
+// 3-16: a save that fails after a Classroom assignment was created for it would lose the link (the
+// transaction undoes the whole save). On an existing assignment the new link is written on its own;
+// for a new one she's told. links: the links after the creates; before: a copy from before them.
+async function keepClassroomLinksAfterFailedSave(activityId, links, before) {
+    const created = Object.keys(links || {}).filter(c => !before || before[c] !== links[c]);
+    if (!created.length) return false;
+    let kept = false;
+    if (activityId) {
+        try {
+            const a = await db.activities.get(activityId);
+            if (a) {
+                const merged = { ...(a.classroomLinks || {}) };
+                for (const c of created) merged[c] = links[c];
+                await db.activities.update(activityId, { classroomLinks: merged });
+                kept = true;
+            }
+        } catch (e) { console.error('Keeping the Classroom link failed:', e); }
+    }
+    ui.showToast(kept
+        ? '⚠️ The save failed, but the Classroom assignment it just created is still linked here. Nothing else was saved. Save again.'
+        : '⚠️ The save failed after the Classroom assignment was created, so ShopFlow isn\'t linked to it. Nothing was saved. Saving again creates another one: delete the extra one in Classroom.', 'warning', 12000);
+    return kept;
+}
+
 async function ensureEnrollment(studentId, period, schoolYear) {
     try {
         const existing = await db.enrollments
@@ -261,6 +293,9 @@ function displayName(student, format) {
 }
 
 async function getNextAnonId() {
+    // P20 (D-b): after the identity cutover, new students get a random anonId (both devices can add
+    // students then); existing ones keep theirs. Before it, the counter as today.
+    if (typeof identity !== 'undefined' && await identity.uidMode()) return identity.newAnonId();
     const setting = await db.settings.get('anon-id-counter');
     let counter = (setting && setting.value) ? setting.value : 1;
     const padded = String(counter).padStart(4, '0');
@@ -353,7 +388,9 @@ function syncThisDevice() {
 function syncEpochOf(data) {
     const rows = data && Array.isArray(data.settings) ? data.settings : [];
     const row = rows.find(r => r && r.key === 'sync-epoch');
-    return (row && row.value && row.value.id) ? row.value.id : null;
+    // P20 (§9 finding 2): a format-2 file marks its epoch '<id>/f2', so code from before P20
+    // (which compares the whole string) refuses it. This code compares the part before the mark.
+    return (row && row.value && row.value.id) ? String(row.value.id).replace(/\/f2$/, '') : null;
 }
 
 async function localSyncEpoch() {
@@ -362,7 +399,10 @@ async function localSyncEpoch() {
 }
 
 // "before"/"after" wording for a copy's epoch compared with this device's
-function epochSide(epoch) { return epoch ? 'after the skills migration' : 'before the skills migration'; }
+function epochSide(epoch) {
+    if (typeof identity !== 'undefined' && identity.isUidEpoch(epoch)) return 'after the identity cutover';   // P20
+    return epoch ? 'after the skills migration' : 'before the skills migration';
+}
 
 // ---- Hidden skills (skills migration, P16 design C3) ----
 // A skill merged away by the migration carries deletedAt (+ mergedInto); a retired skill carries
